@@ -1,0 +1,17 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up Probe-ability",
+        "description": "Select the internal and ambient temperature sensor entities to use for cook predictions.",
+        "data": {
+          "internal_sensor": "Internal (meat) temperature sensor",
+          "ambient_sensor": "Ambient (oven/smoker) temperature sensor"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "This internal sensor is already configured."
+    }
+  }
+}

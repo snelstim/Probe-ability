@@ -39,6 +39,20 @@ const PRESETS = [
 // SVG ring constants (r=50, cx=cy=60)
 const CIRC = 314.16; // 2π × 50
 
+// Brand logo — inline SVG so it works without any extra file reference.
+// A unique clipPath id avoids collisions when multiple cards are on the same page.
+const LOGO_SVG = `<svg width="32" height="32" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0;">
+  <circle cx="100" cy="100" r="95" fill="none" stroke="#e8622a" stroke-width="10"/>
+  <clipPath id="pa-logo-clip">
+    <circle cx="100" cy="100" r="88"/>
+  </clipPath>
+  <g clip-path="url(#pa-logo-clip)">
+    <path d="M5 65 C30 50 50 30 75 40 C100 50 115 80 140 75 C165 70 180 55 195 60" fill="none" stroke="#e8622a" stroke-width="10" stroke-linecap="round"/>
+    <path d="M5 100 C25 90 45 75 70 88 C95 101 115 125 140 115 C160 107 178 90 195 98" fill="none" stroke="#f0a882" stroke-width="10" stroke-linecap="round"/>
+    <path d="M5 138 C28 132 50 120 72 128 C94 136 115 155 140 148 C162 141 178 128 195 133" fill="none" stroke="#f0a882" stroke-width="10" stroke-linecap="round"/>
+  </g>
+</svg>`;
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatTime(minutes) {
@@ -299,7 +313,7 @@ class CookPredictorCard extends HTMLElement {
       <ha-card>
         <div style="padding:20px;">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">
-            <ha-icon icon="mdi:thermometer" style="color:var(--primary-color);--mdc-icon-size:28px;"></ha-icon>
+            ${LOGO_SVG}
             <span style="font-size:1.3em;font-weight:500;">Probe-ability</span>
           </div>
 
@@ -328,7 +342,7 @@ class CookPredictorCard extends HTMLElement {
       <ha-card>
         <div style="padding:20px;">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">
-            <ha-icon icon="mdi:thermometer" style="color:var(--primary-color);--mdc-icon-size:28px;"></ha-icon>
+            ${LOGO_SVG}
             <span style="font-size:1.3em;font-weight:500;">Probe-ability</span>
           </div>
           <div style="text-align:center;padding:20px 0;color:var(--warning-color);">
@@ -348,7 +362,7 @@ class CookPredictorCard extends HTMLElement {
       <ha-card>
         <div style="padding:20px;">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">
-            <ha-icon icon="mdi:thermometer" style="color:var(--primary-color);--mdc-icon-size:28px;"></ha-icon>
+            ${LOGO_SVG}
             <span style="font-size:1.3em;font-weight:500;">Probe-ability</span>
           </div>
           <div>
@@ -531,7 +545,7 @@ class CookPredictorCard extends HTMLElement {
       <ha-card>
         <div style="padding:20px;">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
-            <ha-icon icon="mdi:thermometer" style="color:var(--warning-color);--mdc-icon-size:28px;"></ha-icon>
+            ${LOGO_SVG}
             <span style="font-size:1.3em;font-weight:500;">Probe-ability</span>
             <span style="margin-left:auto;font-size:0.8em;color:var(--secondary-text-color);
                          text-transform:capitalize;background:var(--divider-color);
@@ -1025,8 +1039,7 @@ class CookPredictorCard extends HTMLElement {
         <div style="padding:20px;">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
             <div style="display:flex;align-items:center;gap:10px;">
-              <ha-icon icon="mdi:thermometer"
-                style="color:var(--primary-color);--mdc-icon-size:26px;"></ha-icon>
+              ${LOGO_SVG}
               <span style="font-size:1.2em;font-weight:500;">Probe-ability</span>
             </div>
             <div style="display:flex;align-items:center;gap:8px;">

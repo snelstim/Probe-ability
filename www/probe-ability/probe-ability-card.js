@@ -214,7 +214,7 @@ class CookPredictorCard extends HTMLElement {
     if (!this._ambientSensor) return true;
     const s = this._hass && this._hass.states[this._ambientSensor];
     return s && s.state !== "unavailable" && s.state !== "unknown"
-           && !isNaN(parseFloat(s.state));
+           && !isNaN(parseFloat(s.state)) && parseFloat(s.state) !== 0;
   }
 
   // Returns the indices (0-based) of probes whose sensors are currently
@@ -231,7 +231,7 @@ class CookPredictorCard extends HTMLElement {
       .filter(({ id }) => {
         const s = this._hass && this._hass.states[id];
         return s && s.state !== "unavailable" && s.state !== "unknown"
-               && !isNaN(parseFloat(s.state));
+               && !isNaN(parseFloat(s.state)) && parseFloat(s.state) !== 0;
       })
       .map(({ i }) => i);
   }

@@ -257,7 +257,12 @@ class CookMonitor:
         return sensors
 
     def _probe_sensor_ok(self, probe_index: int) -> bool:
-        """True if the sensor for this probe exists and is reporting a numeric value."""
+        """True if the sensor for this probe exists and is reporting a non-zero numeric value.
+
+        A reading of exactly 0.0 is treated as invalid — disconnected probes
+        report a static 0 rather than "unavailable". Real probes never settle
+        permanently at 0; frozen meat reads negative and room-temp reads positive.
+        """
         sensors = self._probe_sensors()
         if probe_index >= len(sensors):
             return False
@@ -265,19 +270,17 @@ class CookMonitor:
         if not state or state.state in ("unavailable", "unknown"):
             return False
         try:
-            float(state.state)
-            return True
+            return float(state.state) != 0.0
         except (ValueError, TypeError):
             return False
 
     def _ambient_sensor_ok(self) -> bool:
-        """True if the ambient sensor exists and is reporting a numeric value."""
+        """True if the ambient sensor exists and is reporting a non-zero numeric value."""
         state = self.hass.states.get(self.entry.data[CONF_AMBIENT_SENSOR])
         if not state or state.state in ("unavailable", "unknown"):
             return False
         try:
-            float(state.state)
-            return True
+            return float(state.state) != 0.0
         except (ValueError, TypeError):
             return False
 

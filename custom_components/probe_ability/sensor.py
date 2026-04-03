@@ -237,6 +237,8 @@ class CookTimeRemainingSensor(CookPredictorSensorBase):
                     attrs[f"probe_{n}_phase"] = extra_result.phase
                     attrs[f"probe_{n}_confidence"] = extra_result.confidence
                     attrs[f"probe_{n}_readings_count"] = len(extra_pred.readings)
+                    if extra_result.rate_per_minute is not None:
+                        attrs[f"probe_{n}_rate_c_per_minute"] = round(extra_result.rate_per_minute, 3)
                     if extra_result.time_remaining_seconds is not None:
                         attrs[f"probe_{n}_time_remaining"] = round(
                             extra_result.time_remaining_seconds / 60, 1

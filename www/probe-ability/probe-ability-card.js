@@ -790,14 +790,15 @@ class CookPredictorCard extends HTMLElement {
   _renderActiveIndividual(state, attrs) {
     const probeCount = attrs.probe_count || this._cachedProbeCount;
     const probeActiveList = attrs.probe_active || Array(probeCount).fill(false);
-    const timerMode = this._timerMode;
-    const timerIcon = timerMode === "countdown" ? "⏱" : "🌡";
-    const nextMode = timerMode === "countdown" ? "tempup" : "countdown";
+
+    // Which probe indices have a working sensor right now (non-zero reading).
+    // Used to suppress idle setup slots for probes that aren't plugged in.
+    const availableSet = new Set(this._availableProbeIndices(probeCount));
 
     // Gather per-probe data — probes 2/3 use dedicated attrs written by sensor.py
     const probeData = [];
     for (let i = 0; i < probeCount; i++) {
-      const n = i + 1; // human-readable probe number
+      const n = i + 1;
       if (i === 0) {
         probeData.push({
           active: probeActiveList[0],
@@ -808,6 +809,7 @@ class CookPredictorCard extends HTMLElement {
           timeRemaining: parseFloat(state.state) || null,
           readingsCount: attrs.readings_count || 0,
           pullTemp: attrs.pull_temp ?? null,
+          ratePerMinute: attrs.rate_c_per_minute ?? null,
         });
       } else {
         probeData.push({
@@ -819,13 +821,20 @@ class CookPredictorCard extends HTMLElement {
           timeRemaining: attrs[`probe_${n}_time_remaining`] || null,
           readingsCount: attrs[`probe_${n}_readings_count`] || 0,
           pullTemp: attrs[`probe_${n}_pull_temp`] ?? null,
+          ratePerMinute: attrs[`probe_${n}_rate_c_per_minute`] ?? null,
         });
       }
     }
 
+    const ambientTemp = attrs.ambient_temp;
+
     let probeSlots = "";
     for (let i = 0; i < probeCount; i++) {
       const pd = probeData[i];
+
+      // Skip inactive slots whose sensor reads 0 / unavailable
+      if (!pd.active && !availableSet.has(i)) continue;
+
       const phaseColor = {
         heating: "var(--warning-color)",
         stall: "var(--error-color)",
@@ -863,37 +872,68 @@ class CookPredictorCard extends HTMLElement {
           </button>`;
 
       } else if (pd.phase === "collecting") {
-        // ── Collecting: progress bar ───────────────────────────────────
-        const needed = 10;
+        // ── Collecting: two-phase progress ────────────────────────────
+        // Phase 1: accumulate 10 readings.
+        // Phase 2: wait for the 10-minute data span (30 s/reading assumed).
+        const NEEDED_READINGS = 10;
+        const READING_INTERVAL_S = 30;
+        const REQUIRED_SPAN_S = 600;
         const count = pd.readingsCount;
-        const displayCount = Math.min(count, needed);
-        const pct = Math.min((count / needed) * 100, 100);
+        const displayCount = Math.min(count, NEEDED_READINGS);
+        const readingsDone = count >= NEEDED_READINGS;
+        const elapsedS = count * READING_INTERVAL_S;
+        const spanRemainS = Math.max(0, REQUIRED_SPAN_S - elapsedS);
+        const spanPct = Math.min((elapsedS / REQUIRED_SPAN_S) * 100, 100);
+        const readyAt = spanRemainS > 0 ? etaFromMinutes(spanRemainS / 60) : "";
+
         contentBlock = `
           <div style="padding:10px 0 4px;">
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
               <ha-icon icon="mdi:timer-sand" style="color:var(--warning-color);--mdc-icon-size:22px;flex-shrink:0;"></ha-icon>
               <span style="font-size:0.85em;color:var(--secondary-text-color);">
                 Warming up… target <strong>${pd.targetTemp || "—"}°C</strong>
               </span>
             </div>
-            <div style="font-size:0.78em;color:var(--secondary-text-color);margin-bottom:6px;">
-              Collecting data (${displayCount}/${needed} readings)
+
+            ${!readingsDone ? `
+              <div style="font-size:0.78em;color:var(--secondary-text-color);margin-bottom:4px;">
+                Readings: ${displayCount}/${NEEDED_READINGS}
+              </div>
+              <div style="background:var(--divider-color);border-radius:4px;height:6px;overflow:hidden;">
+                <div style="background:var(--warning-color);height:100%;
+                            width:${(count / NEEDED_READINGS) * 100}%;
+                            border-radius:4px;transition:width 0.5s;"></div>
+              </div>
+            ` : `
+              <div style="display:flex;align-items:center;gap:4px;font-size:0.78em;
+                          color:var(--success-color);margin-bottom:6px;">
+                <ha-icon icon="mdi:check" style="--mdc-icon-size:14px;"></ha-icon>
+                Readings: ${NEEDED_READINGS}/${NEEDED_READINGS}
+              </div>
+              <div style="font-size:0.78em;color:var(--secondary-text-color);margin-bottom:4px;">
+                Building data span…${readyAt ? ` ready at ${readyAt}` : ""}
+              </div>
+              <div style="background:var(--divider-color);border-radius:4px;height:6px;overflow:hidden;">
+                <div style="background:var(--warning-color);height:100%;width:${spanPct}%;
+                            border-radius:4px;transition:width 0.5s;"></div>
+              </div>
+            `}
+
+            <div style="display:flex;justify-content:space-between;margin-top:8px;
+                        font-size:0.8em;color:var(--secondary-text-color);">
+              ${pd.currentTemp != null
+                ? `<span>Internal: <strong>${pd.currentTemp}°C</strong></span>`
+                : "<span></span>"}
+              ${ambientTemp != null
+                ? `<span>Ambient: <strong>${ambientTemp}°C</strong></span>`
+                : ""}
             </div>
-            <div style="background:var(--divider-color);border-radius:4px;height:6px;overflow:hidden;">
-              <div style="background:var(--warning-color);height:100%;width:${pct}%;
-                          border-radius:4px;transition:width 0.5s;"></div>
-            </div>
-            ${pd.currentTemp != null
-              ? `<div style="font-size:0.8em;color:var(--secondary-text-color);margin-top:6px;">
-                   Current: ${pd.currentTemp}°C
-                 </div>`
-              : ""}
           </div>`;
         actionBlock = `
           <button class="cp-stop-probe" data-index="${i}"
             style="width:100%;padding:8px;background:none;color:var(--error-color);
                    border:1px solid var(--error-color);border-radius:6px;
-                   font-size:0.8em;cursor:pointer;margin-top:4px;">
+                   font-size:0.8em;cursor:pointer;margin-top:6px;">
             Cancel Probe ${i + 1}
           </button>`;
 
@@ -919,46 +959,37 @@ class CookPredictorCard extends HTMLElement {
           </button>`;
 
       } else {
-        // ── Active: SVG ring (heating / stall / finishing) ─────────────
-        let progress = 0;
-        let centerPrimary = "—";
-        let centerSecondary = "";
-
-        if (timerMode === "tempup") {
-          // Temperature-up mode: ring fills as temp rises toward target
-          progress = (pd.currentTemp != null && pd.targetTemp > 0)
-            ? Math.min(pd.currentTemp / pd.targetTemp, 1) : 0;
-          centerPrimary = pd.currentTemp != null ? `${pd.currentTemp}°C` : "—";
-          centerSecondary = pd.targetTemp ? `of ${pd.targetTemp}°C` : "";
-        } else {
-          // Countdown mode: show time remaining.
-          // If no estimate yet, show "—" (NOT temperature — that keeps modes visually distinct).
-          if (pd.timeRemaining) {
-            const elapsed = pd.readingsCount * 0.5;
-            const total = pd.timeRemaining + elapsed;
-            progress = total > 0 ? Math.min(elapsed / total, 1) : 0;
-            centerPrimary = formatTime(pd.timeRemaining);
-            centerSecondary = "remaining";
-          } else {
-            // No time estimate yet — leave ring empty and show a dash
-            progress = 0;
-            centerPrimary = "—";
-            centerSecondary = "estimating…";
-          }
-        }
-
-        // "Remove from heat" warning: current temp has reached the pull point
+        // ── Active: ring + info rows ───────────────────────────────────
         const shouldPull = pd.pullTemp != null
           && pd.currentTemp != null
           && pd.currentTemp >= pd.pullTemp
           && pd.phase !== "done";
 
+        // Countdown ring — always shows time remaining in individual mode
+        let progress = 0;
+        let centerPrimary = "—";
+        let centerSecondary = "estimating…";
+        if (pd.timeRemaining) {
+          const elapsed = pd.readingsCount * 0.5;
+          const total = pd.timeRemaining + elapsed;
+          progress = total > 0 ? Math.min(elapsed / total, 1) : 0;
+          centerPrimary = formatTime(pd.timeRemaining);
+          centerSecondary = "remaining";
+        }
+
         const offset = (CIRC * (1 - progress)).toFixed(2);
         const ringColor = shouldPull ? "var(--warning-color)" : phaseColor;
 
+        // Temp progress bar (current → target)
+        const tempPct = (pd.currentTemp != null && pd.targetTemp > 0)
+          ? Math.min((pd.currentTemp / pd.targetTemp) * 100, 100).toFixed(1)
+          : null;
+
+        const eta = etaFromMinutes(pd.timeRemaining);
+
         contentBlock = `
-          <svg viewBox="0 0 120 120" width="110" height="110"
-               style="display:block;margin:8px auto 0;">
+          <svg viewBox="0 0 120 120" width="100" height="100"
+               style="display:block;margin:6px auto 0;">
             <circle cx="60" cy="60" r="50" fill="none"
               stroke="var(--divider-color)" stroke-width="10"
               transform="rotate(-90 60 60)" />
@@ -976,32 +1007,56 @@ class CookPredictorCard extends HTMLElement {
               ${centerSecondary}
             </text>
           </svg>
+
+          ${tempPct != null ? `
+            <div style="margin-top:10px;">
+              <div style="display:flex;justify-content:space-between;
+                          font-size:0.8em;color:var(--secondary-text-color);margin-bottom:3px;">
+                <span><strong style="color:var(--primary-text-color);">${pd.currentTemp}°C</strong></span>
+                <span>${pd.targetTemp}°C</span>
+              </div>
+              <div style="background:var(--divider-color);border-radius:4px;height:5px;overflow:hidden;">
+                <div style="background:${ringColor};height:100%;width:${tempPct}%;
+                            border-radius:4px;transition:width 1s ease;"></div>
+              </div>
+            </div>` : ""}
+
+          <div style="display:flex;justify-content:space-between;margin-top:8px;
+                      font-size:0.78em;color:var(--secondary-text-color);">
+            <span>${pd.ratePerMinute != null
+              ? `Rate: ${pd.ratePerMinute.toFixed(2)}°C/min`
+              : ""}</span>
+            <span>${eta ? `ETA: ${eta}` : ""}</span>
+          </div>
+          ${ambientTemp != null ? `
+            <div style="font-size:0.78em;color:var(--secondary-text-color);margin-top:2px;">
+              Ambient: ${ambientTemp}°C
+            </div>` : ""}
+
           ${shouldPull ? `
-            <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;margin-top:8px;
+            <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;margin-top:8px;
                         background:rgba(255,152,0,0.15);
                         border:2px solid var(--warning-color);border-radius:10px;">
               <ha-icon icon="mdi:fire-off"
-                style="color:var(--warning-color);--mdc-icon-size:26px;flex-shrink:0;"></ha-icon>
+                style="color:var(--warning-color);--mdc-icon-size:22px;flex-shrink:0;"></ha-icon>
               <div>
-                <div style="font-size:0.88em;font-weight:700;color:var(--warning-color);">
+                <div style="font-size:0.85em;font-weight:700;color:var(--warning-color);">
                   Remove from heat now!
                 </div>
-                <div style="font-size:0.75em;color:var(--secondary-text-color);margin-top:2px;">
-                  Carryover cooking will bring it to ${pd.targetTemp}°C.
-                  Pull temp: ${pd.pullTemp}°C.
+                <div style="font-size:0.73em;color:var(--secondary-text-color);margin-top:1px;">
+                  Carryover will bring it to ${pd.targetTemp}°C. Pull temp: ${pd.pullTemp}°C.
                 </div>
               </div>
             </div>` : ""}
           ${pd.phase === "stall" && !shouldPull ? `
-            <div style="display:flex;align-items:center;gap:6px;padding:6px 10px;margin-top:6px;
+            <div style="display:flex;align-items:center;gap:6px;padding:5px 8px;margin-top:6px;
                         background:rgba(var(--rgb-error-color,244,67,54),0.1);
-                        border:1px solid var(--error-color);border-radius:8px;font-size:0.78em;">
+                        border:1px solid var(--error-color);border-radius:8px;font-size:0.76em;">
               <ha-icon icon="mdi:pause-circle"
-                style="color:var(--error-color);--mdc-icon-size:18px;flex-shrink:0;"></ha-icon>
-              <span style="color:var(--error-color);">
-                Stall detected — showing last stable estimate
-              </span>
+                style="color:var(--error-color);--mdc-icon-size:16px;flex-shrink:0;"></ha-icon>
+              <span style="color:var(--error-color);">Stall — showing last stable estimate</span>
             </div>` : ""}`;
+
         actionBlock = `
           <button class="cp-stop-probe" data-index="${i}"
             style="width:100%;padding:8px;background:none;color:var(--error-color);
@@ -1012,9 +1067,7 @@ class CookPredictorCard extends HTMLElement {
       }
 
       const confDots = { low: "●○○", medium: "●●○", high: "●●●" }[pd.confidence] || "";
-      const showPhaseDetail = pd.active
-        && pd.phase !== "collecting"
-        && pd.phase !== "done";
+      const showPhaseDetail = pd.active && pd.phase !== "collecting" && pd.phase !== "done";
       const probePresetName = pd.active ? this._getActivePresetName(i) : null;
 
       probeSlots += `
@@ -1053,25 +1106,13 @@ class CookPredictorCard extends HTMLElement {
               ${LOGO_SVG}
               <span style="font-size:1.2em;font-weight:500;">Probe-ability</span>
             </div>
-            <div style="display:flex;align-items:center;gap:8px;">
-              <button id="cp-timer-mode"
-                title="Switch timer display mode"
-                style="background:none;border:none;cursor:pointer;font-size:1.2em;
-                       padding:4px;color:var(--secondary-text-color);">${timerIcon}</button>
-              <span style="font-size:0.75em;color:var(--secondary-text-color);
-                           background:var(--divider-color);padding:2px 8px;
-                           border-radius:10px;">Individual</span>
-            </div>
+            <span style="font-size:0.75em;color:var(--secondary-text-color);
+                         background:var(--divider-color);padding:2px 8px;
+                         border-radius:10px;">Individual</span>
           </div>
           ${probeSlots}
         </div>
       </ha-card>`;
-
-    // Timer mode toggle
-    this.querySelector("#cp-timer-mode").addEventListener("click", () => {
-      localStorage.setItem("probe_ability_timer_mode", nextMode);
-      this._render();
-    });
 
     // Stop / cancel buttons — each gets its own confirmation prompt
     this.querySelectorAll(".cp-stop-probe").forEach((btn) => {

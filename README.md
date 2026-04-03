@@ -345,16 +345,16 @@ Enable **Export cook data** in the config flow to automatically save a CSV file 
 Lines starting with `#` are metadata headers and can be skipped by most tools.
 
 ```
-# cook_predictor_export_version: 1
+# probe_ability_export_version: 3
 # probe_index: 0
 # probe_mode: combined
 # target_temp_c: 96.0
 # reached_target: true
 # total_readings: 147
 # export_timestamp: 2026-04-03T18:30:00.000000
-elapsed_s,internal_temp_c,ambient_temp_c
-0.0,22.50,120.00
-32.1,22.75,121.00
+elapsed_s,internal_temp_c,ambient_temp_c,predicted_remaining_s,confidence
+0.0,22.50,120.00,,
+32.1,22.75,121.00,,
 ...
 ```
 

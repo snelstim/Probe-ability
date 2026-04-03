@@ -1,5 +1,5 @@
 /**
- * Probe-ability Card
+ * Probe-ability Card v1.0.0
  *
  * Custom Lovelace card for the Probe-ability integration.
  * Shows cook status, predictions, and lets you start/stop cooks.
@@ -23,6 +23,8 @@
  *   eta_entity: sensor.probe_ability_estimated_completion  (optional)
  *   entry_id: <your_entry_id>                               (optional)
  */
+
+const CARD_VERSION = "1.0.0";
 
 const PRESETS = [
   { name: "Beef (Medium Rare)", temp: 54 },
@@ -1343,4 +1345,7 @@ window.customCards.push({
   name: "Probe-ability",
   description: "Predictive meat thermometer card with multi-probe support, preset dropdown, and circular timer.",
   preview: true,
+  version: CARD_VERSION,
 });
+
+console.info(`%c PROBE-ABILITY CARD %c v${CARD_VERSION} `, "color:#fff;background:#e8622a;font-weight:bold;", "color:#e8622a;background:#fff;font-weight:bold;");

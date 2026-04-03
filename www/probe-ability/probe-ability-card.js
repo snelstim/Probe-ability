@@ -121,6 +121,7 @@ class CookPredictorCard extends HTMLElement {
     this._config = config;
     this._hass = null;
     this._probeSensors = config.probe_sensors || [];
+    this._ambientSensor = config.ambient_sensor || null;
     // Per-slot form state: { presetIndex: number|null, temp: number }
     // Key: "combined" or probe index 0/1/2.
     // Backed by localStorage so selections survive page navigation.
@@ -208,6 +209,14 @@ class CookPredictorCard extends HTMLElement {
     try { localStorage.setItem("probe_ability_probe_count", String(count)); } catch (e) {}
   }
 
+  // True if the ambient sensor is available (or not configured in card config).
+  _ambientOk() {
+    if (!this._ambientSensor) return true;
+    const s = this._hass && this._hass.states[this._ambientSensor];
+    return s && s.state !== "unavailable" && s.state !== "unknown"
+           && !isNaN(parseFloat(s.state));
+  }
+
   // Returns the indices (0-based) of probes whose sensors are currently
   // available and reporting a numeric value.
   // If probe_sensors is not configured in the card config, all probes are
@@ -285,12 +294,14 @@ class CookPredictorCard extends HTMLElement {
 
   _renderIdle(attrs) {
     const probeMode = this._probeMode;
-    // attrs.probe_count is absent when entity is unavailable; fall back to cache
-    const probeCount = attrs.probe_count || this._cachedProbeCount;
+    // Use probe_sensors.length as the authoritative total when configured —
+    // attrs.probe_count is absent while idle (sensor unavailable = no attrs),
+    // and _cachedProbeCount defaults to 1 which causes the wrong branch.
+    const probeCount = this._probeSensors.length || attrs.probe_count || this._cachedProbeCount;
     const available = this._availableProbeIndices(probeCount);
 
-    // No sensors at all → inform the user, no start button
-    if (available.length === 0) {
+    // No sensors at all, or ambient unavailable → inform the user, no start button
+    if (!this._ambientOk() || available.length === 0) {
       this._renderNoSensors();
       return;
     }

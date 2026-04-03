@@ -65,7 +65,8 @@ entity: sensor.probe_ability_time_remaining
 | `entity` | **Yes** | The primary `time_remaining` sensor entity ID |
 | `eta_entity` | No | The `estimated_completion` sensor entity ID. If omitted the ETA is computed client-side from the time remaining value |
 | `entry_id` | No | Config entry ID — only needed when you have **multiple instances** of the integration installed. See [Multiple instances](#multiple-instances) |
-| `probe_sensors` | No | List of probe sensor entity IDs — enables pre-flight availability checking in the card UI (see [Probe availability](#probe-availability)) |
+| `probe_sensors` | No | List of internal probe sensor entity IDs — enables pre-flight availability checking in the card UI (see [Probe availability](#probe-availability)) |
+| `ambient_sensor` | No | Ambient (oven/smoker) sensor entity ID — if set, the card shows "no sensors" until the ambient sensor is also available |
 
 ### Minimal (single instance)
 
@@ -81,6 +82,7 @@ type: custom:probe-ability-card
 entity: sensor.probe_ability_time_remaining
 eta_entity: sensor.probe_ability_estimated_completion
 entry_id: abc123def456
+ambient_sensor: sensor.smoker_ambient_temperature
 probe_sensors:
   - sensor.probe_1_temperature
   - sensor.probe_2_temperature

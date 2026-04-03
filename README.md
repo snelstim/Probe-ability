@@ -27,9 +27,9 @@ Probe-ability fits an exponential curve to your temperature readings in real tim
 
 ### 2. Lovelace Card
 
-1. Copy `www/probe-ability-card.js` to your HA `config/www/` directory.
+1. Copy the `www/probe-ability/` folder to your HA `config/www/` directory (keeping the subfolder).
 2. In Lovelace, go to **Edit Dashboard → Manage Resources** and add:
-   - URL: `/local/probe-ability-card.js`
+   - URL: `/local/probe-ability/probe-ability-card.js`
    - Type: JavaScript Module
 3. Add the card to a dashboard (see [Card configuration](#card-configuration) below).
 

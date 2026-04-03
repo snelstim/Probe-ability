@@ -6,8 +6,7 @@ from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.config_entries import ConfigFlow
-from homeassistant.data_entry_flow import FlowResult
+from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.helpers.selector import (
     BooleanSelector,
     EntitySelector,
@@ -49,7 +48,7 @@ class CookPredictorConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Handle the initial step."""
         if user_input is not None:
             # Use internal sensor entity_id as unique id to prevent duplicates

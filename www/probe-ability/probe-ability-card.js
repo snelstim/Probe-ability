@@ -701,14 +701,11 @@ class CookPredictorCard extends HTMLElement {
             </div>
           </div>
 
-          <!-- SVG circular timer -->
-          <div style="position:relative;display:flex;flex-direction:column;align-items:center;padding:4px 0 8px;">
-            <button id="cp-timer-mode"
-              title="${nextLabel}"
-              style="position:absolute;top:0;right:0;background:none;border:none;cursor:pointer;
-                     font-size:1.2em;padding:4px;color:var(--secondary-text-color);">
-              ${timerIcon}
-            </button>
+          <!-- SVG circular timer — tap anywhere to toggle mode -->
+          <div id="cp-ring-container"
+            title="${nextLabel}"
+            style="position:relative;display:flex;flex-direction:column;align-items:center;
+                   padding:4px 0 8px;cursor:pointer;user-select:none;">
             <svg viewBox="0 0 120 120" width="160" height="160">
               <!-- Background ring -->
               <circle cx="60" cy="60" r="50" fill="none"
@@ -728,6 +725,11 @@ class CookPredictorCard extends HTMLElement {
               <text x="60" y="70" text-anchor="middle"
                 style="font-size:10px;fill:var(--secondary-text-color);">
                 ${centerSecondary}
+              </text>
+              <!-- Tap hint -->
+              <text x="60" y="86" text-anchor="middle"
+                style="font-size:8px;fill:var(--secondary-text-color);opacity:0.5;">
+                ${timerMode === "countdown" ? "tap for temp" : "tap for time"}
               </text>
             </svg>
             ${etaDisplay ? `<div style="font-size:0.95em;color:var(--secondary-text-color);margin-top:2px;">Done ~${etaDisplay}</div>` : ""}
@@ -785,7 +787,7 @@ class CookPredictorCard extends HTMLElement {
         </div>
       </ha-card>`;
 
-    this.querySelector("#cp-timer-mode").addEventListener("click", () => {
+    this.querySelector("#cp-ring-container").addEventListener("click", () => {
       localStorage.setItem("probe_ability_timer_mode", nextMode);
       this._render();
     });

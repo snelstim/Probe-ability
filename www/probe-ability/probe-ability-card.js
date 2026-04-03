@@ -420,8 +420,9 @@ class CookPredictorCard extends HTMLElement {
       startBtn.addEventListener("click", () => {
         const target = parseFloat(targetEl ? targetEl.value : "74") || 74;
         const presetIdx = presetEl && presetEl.value !== "" ? parseInt(presetEl.value, 10) : null;
+        const cookName = presetIdx != null && PRESETS[presetIdx] ? PRESETS[presetIdx].name : "Custom";
         this._saveActivePreset(probeIndex, presetIdx);
-        this._callStart({ target_temp: target, probe_mode: "individual", probe_index: probeIndex });
+        this._callStart({ target_temp: target, probe_mode: "individual", probe_index: probeIndex, cook_name: cookName });
       });
     }
   }
@@ -501,8 +502,9 @@ class CookPredictorCard extends HTMLElement {
       startBtn.addEventListener("click", () => {
         const target = parseFloat(targetEl ? targetEl.value : "74") || 74;
         const presetIdx = presetEl && presetEl.value !== "" ? parseInt(presetEl.value, 10) : null;
+        const cookName = presetIdx != null && PRESETS[presetIdx] ? PRESETS[presetIdx].name : "Custom";
         this._saveActivePreset("combined", presetIdx);
-        this._callStart({ target_temp: target, probe_mode: "combined" });
+        this._callStart({ target_temp: target, probe_mode: "combined", cook_name: cookName });
       });
     }
   }
@@ -535,8 +537,9 @@ class CookPredictorCard extends HTMLElement {
       startBtn.addEventListener("click", () => {
         const target = parseFloat(targetEl ? targetEl.value : 74);
         const presetIdx = presetEl && presetEl.value !== "" ? parseInt(presetEl.value, 10) : null;
+        const cookName = presetIdx != null && PRESETS[presetIdx] ? PRESETS[presetIdx].name : "Custom";
         this._saveActivePreset(i, presetIdx);
-        this._callStart({ target_temp: target, probe_mode: "individual", probe_index: i });
+        this._callStart({ target_temp: target, probe_mode: "individual", probe_index: i, cook_name: cookName });
       });
     }
   }
@@ -1155,8 +1158,9 @@ class CookPredictorCard extends HTMLElement {
       btn.addEventListener("click", () => {
         const target = parseFloat(targetEl ? targetEl.value : "74") || 74;
         const presetIdx = presetEl && presetEl.value !== "" ? parseInt(presetEl.value, 10) : null;
+        const cookName = presetIdx != null && PRESETS[presetIdx] ? PRESETS[presetIdx].name : "Custom";
         this._saveActivePreset(i, presetIdx);
-        this._callStart({ target_temp: target, probe_mode: "individual", probe_index: i });
+        this._callStart({ target_temp: target, probe_mode: "individual", probe_index: i, cook_name: cookName });
       });
     });
   }

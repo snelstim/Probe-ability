@@ -24,6 +24,7 @@ class PredictionResult:
     phase: str = "collecting"  # collecting | heating | stall | finishing | done
     confidence: str = "low"  # low | medium | high
     message: str = ""
+    prediction_model: str = ""  # "ml" | "physics" | "" during collecting
 
 
 class CookPredictor:
@@ -179,9 +180,13 @@ class CookPredictor:
             return result
 
         # Primary: ML model (falls back to physics if model unavailable)
-        remaining = self._ml_estimate()
-        if remaining is None:
+        ml_remaining = self._ml_estimate()
+        if ml_remaining is not None:
+            remaining = ml_remaining
+            used_model = "ml"
+        else:
             remaining = self._exponential_estimate(windowed, avg_ambient, current_temp)
+            used_model = "physics"
 
         if remaining is not None and remaining > 0:
             remaining = self._smooth(remaining)
@@ -192,6 +197,7 @@ class CookPredictor:
                 rate_per_minute=rate,
                 phase=phase,
                 confidence=confidence,
+                prediction_model=used_model,
             )
 
         # Fallback: linear
@@ -372,10 +378,12 @@ class CookPredictor:
                 phase=phase,
                 confidence=confidence,
                 message=message,
+                prediction_model="physics",
             )
         return PredictionResult(
             phase=phase,
             rate_per_minute=rate,
             confidence=confidence,
+            prediction_model="physics",
             message=message or "Insufficient trend to estimate",
         )

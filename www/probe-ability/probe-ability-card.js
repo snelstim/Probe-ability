@@ -26,17 +26,126 @@
 
 const CARD_VERSION = "1.0.0";
 
-const PRESETS = [
-  { name: "Beef (Medium Rare)", temp: 54 },
-  { name: "Beef (Medium)", temp: 60 },
-  { name: "Beef (Well Done)", temp: 71 },
-  { name: "Pork", temp: 63 },
-  { name: "Chicken / Poultry", temp: 74 },
-  { name: "Lamb (Medium Rare)", temp: 54 },
-  { name: "Lamb (Medium)", temp: 63 },
-  { name: "Brisket", temp: 96 },
-  { name: "Pulled Pork", temp: 96 },
-];
+// ─── Preset data (loaded async from cook_presets.json) ───────────────────────
+//
+// _presets is:  null  = still loading
+//               false = failed to load (card falls back to manual temp entry)
+//               object = loaded successfully
+//
+// To add or edit presets edit  www/probe-ability/cook_presets.json  only.
+// Python (ml_predictor.py) reads the same file, so no Python changes needed.
+
+let _presets = null;
+let _presetsWaiters = [];
+
+function _loadPresets() {
+  if (_presets !== null) return Promise.resolve(_presets);
+  return new Promise((resolve) => {
+    _presetsWaiters.push(resolve);
+    if (_presetsWaiters.length === 1) {
+      fetch("/local/probe-ability/cook_presets.json")
+        .then((r) => r.json())
+        .then((d) => {
+          _presets = d;
+          _presetsWaiters.forEach((fn) => fn(d));
+          _presetsWaiters = [];
+        })
+        .catch(() => {
+          _presets = false;
+          _presetsWaiters.forEach((fn) => fn(false));
+          _presetsWaiters = [];
+        });
+    }
+  });
+}
+
+// Generate the cook_name string that is sent to the start_cook service and
+// stored on the Python predictor.  Must match the formula in ml_predictor.py:
+//   f"{cat['label']} {cut['label']} {don['label']}"
+function _makeCookName(category, cut, doneness) {
+  if (!_presets || !category || !cut || !doneness) return "Custom";
+  const catObj = _presets.categories.find((c) => c.id === category);
+  const cutObj = catObj?.cuts.find((c) => c.id === cut);
+  const donObj = cutObj?.doneness.find((d) => d.id === doneness);
+  return catObj && cutObj && donObj
+    ? `${catObj.label} ${cutObj.label} ${donObj.label}`
+    : "Custom";
+}
+
+// Render the 3-step hierarchical preset selector for one idle slot.
+//   idSuffix  — unique string used as suffix for all element IDs and data-slot
+//   slotState — { category, cut, doneness, temp }
+//
+// Step 1: row of icon-pill buttons (one per category)
+// Step 2: cut <select> — appears after a category is chosen
+// Step 3: doneness <select> — appears after a cut is chosen (skipped for
+//         single-doneness cuts, which are auto-selected)
+function _presetSelector(idSuffix, slotState) {
+  const selStyle = `width:100%;box-sizing:border-box;padding:10px 12px;
+    border:1px solid var(--divider-color);border-radius:8px;font-size:0.95em;
+    background:var(--card-background-color);color:var(--primary-text-color);cursor:pointer;`;
+
+  if (!_presets) {
+    return `<div style="font-size:0.85em;color:var(--secondary-text-color);padding:8px 0;">
+      Loading presets…</div>`;
+  }
+
+  const { category, cut, doneness } = slotState;
+
+  // Step 1 — category pill buttons
+  const catBtns = _presets.categories
+    .map((c) => {
+      const sel = c.id === category;
+      return `<button
+        data-action="cat" data-slot="${idSuffix}" data-val="${c.id}"
+        style="padding:6px 10px;border-radius:20px;font-size:0.82em;cursor:pointer;
+               border:1px solid ${sel ? "var(--primary-color)" : "var(--divider-color)"};
+               background:${sel ? "var(--primary-color)" : "var(--card-background-color)"};
+               color:${sel ? "var(--text-primary-color)" : "var(--primary-text-color)"};
+               font-weight:${sel ? "600" : "400"};">
+        ${c.icon} ${c.label}
+      </button>`;
+    })
+    .join("");
+  let html = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">${catBtns}</div>`;
+
+  if (!category) return html;
+
+  // Step 2 — cut dropdown
+  const catObj = _presets.categories.find((c) => c.id === category);
+  if (!catObj) return html;
+
+  const cutOpts = catObj.cuts
+    .map((c) => `<option value="${c.id}"${c.id === cut ? " selected" : ""}>${c.label}</option>`)
+    .join("");
+  html += `<div style="margin-bottom:8px;">
+    <select id="cp-cut-${idSuffix}" style="${selStyle}">
+      <option value="">— Select cut —</option>
+      ${cutOpts}
+    </select>
+  </div>`;
+
+  if (!cut) return html;
+
+  // Step 3 — doneness dropdown (omitted for single-doneness cuts)
+  const cutObj = catObj.cuts.find((c) => c.id === cut);
+  if (!cutObj || cutObj.doneness.length <= 1) return html;
+
+  const donOpts = cutObj.doneness
+    .map(
+      (d) =>
+        `<option value="${d.id}"${d.id === doneness ? " selected" : ""}>${d.label} (${d.temp}°C)</option>`
+    )
+    .join("");
+  html += `<div style="margin-bottom:8px;">
+    <select id="cp-don-${idSuffix}" style="${selStyle}">
+      <option value="">— Select doneness —</option>
+      ${donOpts}
+    </select>
+  </div>`;
+
+  return html;
+}
 
 // SVG ring constants (r=50, cx=cy=60)
 const CIRC = 314.16; // 2π × 50
@@ -73,25 +182,6 @@ function etaFromMinutes(minutes) {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-// selectedIndex: the PRESETS array index of the chosen preset, or null for
-// "no preset selected / custom temp".  Using the index (not the temp) as the
-// option value avoids collisions between presets that share a temperature
-// (e.g. Beef Medium Rare and Lamb Medium Rare are both 54 °C).
-function presetDropdown(idSuffix, selectedIndex) {
-  const opts = PRESETS.map(
-    (p, idx) =>
-      `<option value="${idx}"${idx === selectedIndex ? " selected" : ""}>${p.name} (${p.temp}°C)</option>`
-  ).join("");
-  return `
-    <select id="cp-preset-${idSuffix}"
-      style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--divider-color);
-             border-radius:8px;font-size:0.95em;background:var(--card-background-color);
-             color:var(--primary-text-color);cursor:pointer;">
-      <option value="">— Select preset —</option>
-      ${opts}
-    </select>`;
-}
-
 function tempInput(id, value) {
   return `<input id="${id}" type="number" value="${value}" min="30" max="200" step="0.5"
     style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--divider-color);
@@ -124,52 +214,89 @@ class CookPredictorCard extends HTMLElement {
     this._hass = null;
     this._probeSensors = config.probe_sensors || [];
     this._ambientSensor = config.ambient_sensor || null;
-    // Per-slot form state: { presetIndex: number|null, temp: number }
+    // Per-slot form state: { category, cut, doneness, temp }
     // Key: "combined" or probe index 0/1/2.
     // Backed by localStorage so selections survive page navigation.
     try {
       this._idleState = JSON.parse(localStorage.getItem("probe_ability_idle_state") || "{}");
-      // Sanitise: ensure every stored temp is a real number, not null/NaN
       for (const key of Object.keys(this._idleState)) {
         const s = this._idleState[key];
-        if (!s || typeof s.temp !== "number" || isNaN(s.temp)) {
+        // Drop invalid entries or old format (had presetIndex instead of category/cut/doneness)
+        if (!s || typeof s.temp !== "number" || isNaN(s.temp) || "presetIndex" in s) {
           delete this._idleState[key];
         }
       }
     } catch (e) {
       this._idleState = {};
     }
+    // Migrate old active-preset store (used to hold a numeric index; now holds a string)
+    try {
+      const ap = JSON.parse(localStorage.getItem("probe_ability_active_presets") || "{}");
+      let changed = false;
+      for (const k of Object.keys(ap)) {
+        if (typeof ap[k] === "number") { delete ap[k]; changed = true; }
+      }
+      if (changed) localStorage.setItem("probe_ability_active_presets", JSON.stringify(ap));
+    } catch (e) {}
+    // Start loading presets immediately so data is ready before first render
+    _loadPresets().then(() => { if (this._hass) this._render(); });
   }
 
   set hass(hass) {
+    const prev = this._hass;
     this._hass = hass;
-    // Snapshot the currently-displayed form before rebuilding HTML
     this._saveIdleFormState();
+
+    const entity = this._config?.entity;
+    const ns = hass.states[entity];
+    const na = ns?.attributes || {};
+    const isIdle = !na.active;
+
+    if (isIdle) {
+      // During idle the form is driven entirely by local state, not HA state.
+      // Rebuilding on every hass push destroys open dropdowns and focused inputs.
+
+      // 1. Skip if a form element in this card currently has focus.
+      const focused = document.activeElement;
+      if (focused && this.contains(focused) &&
+          (focused.tagName === "SELECT" || focused.tagName === "INPUT")) {
+        return;
+      }
+
+      // 2. Skip if nothing that affects the idle view has changed.
+      if (prev) {
+        const ps = prev.states[entity];
+        const pa = ps?.attributes || {};
+        if (!pa.active && !na.active && pa.probe_count === na.probe_count) {
+          return;
+        }
+      }
+    }
+
     this._render();
   }
 
   _saveIdleFormState() {
-    const save = (key, presetEl, targetEl) => {
-      if (!targetEl) return;
-      const raw = presetEl ? presetEl.value : "";
-      const presetIndex = raw !== "" ? parseInt(raw, 10) : null;
-      const temp = parseFloat(targetEl.value) || 74;
-      this._idleState[key] = { presetIndex, temp };
+    // Only the manual temp input needs capturing — category/cut/doneness are
+    // persisted immediately in the event handlers.
+    const saveTemp = (key, targetId) => {
+      const el = this.querySelector(`#${targetId}`);
+      if (!el) return;
+      const temp = parseFloat(el.value) || 74;
+      this._idleState[key] = { ...(this._idleState[key] || {}), temp };
     };
-    save("combined",
-      this.querySelector("#cp-preset-combined"),
-      this.querySelector("#cp-target-combined"));
+    saveTemp("combined", "cp-target-combined");
     for (let i = 0; i < 3; i++) {
-      save(i,
-        this.querySelector(`#cp-preset-${i}`),
-        this.querySelector(`#cp-target-${i}`));
+      saveTemp(i, `cp-target-${i}`);           // individual idle slot
+      saveTemp(i, `cp-target-idle-${i}`);      // idle slot inside active-individual view
+      saveTemp(`sp-${i}`, `cp-target-sp-${i}`); // single-probe view
     }
     this._persistIdleState();
   }
 
-  // Returns { presetIndex, temp } for a slot, defaulting to no preset / 74 °C.
+  // Returns { category, cut, doneness, temp } for a slot.
   _slotState(key) {
-    return this._idleState[key] || { presetIndex: null, temp: 74 };
+    return this._idleState[key] || { category: null, cut: null, doneness: null, temp: 74 };
   }
 
   _persistIdleState() {
@@ -178,13 +305,13 @@ class CookPredictorCard extends HTMLElement {
     } catch (e) { /* ignore quota errors */ }
   }
 
-  // Persist the preset name that was active when a cook was started.
+  // Persist the cook name that was active when a cook was started.
   // Key: "combined" or probe index 0/1/2.
-  _saveActivePreset(key, presetIndex) {
+  _saveActivePreset(key, cookName) {
     try {
       const store = JSON.parse(localStorage.getItem("probe_ability_active_presets") || "{}");
-      if (presetIndex != null && PRESETS[presetIndex]) {
-        store[String(key)] = presetIndex;
+      if (cookName && cookName !== "Custom") {
+        store[String(key)] = cookName;
       } else {
         delete store[String(key)];
       }
@@ -192,12 +319,12 @@ class CookPredictorCard extends HTMLElement {
     } catch (e) {}
   }
 
-  // Returns the preset name for a running cook slot, or null for custom temp.
+  // Returns the cook name for a running cook slot, or null for custom temp.
   _getActivePresetName(key) {
     try {
       const store = JSON.parse(localStorage.getItem("probe_ability_active_presets") || "{}");
-      const idx = store[String(key)];
-      return (idx != null && PRESETS[idx]) ? PRESETS[idx].name : null;
+      const name = store[String(key)];
+      return typeof name === "string" ? name : null;
     } catch (e) { return null; }
   }
 
@@ -370,7 +497,8 @@ class CookPredictorCard extends HTMLElement {
   }
 
   _renderIdleSingleProbe(probeIndex) {
-    const { presetIndex, temp } = this._slotState(probeIndex);
+    const slotKey = `sp-${probeIndex}`;
+    const state = this._slotState(slotKey);
     this.innerHTML = `
       <ha-card>
         <div style="padding:20px;">
@@ -379,11 +507,12 @@ class CookPredictorCard extends HTMLElement {
             <span style="font-size:1.3em;font-weight:500;">Probe-ability</span>
           </div>
           <div>
-            <label style="display:block;font-size:0.85em;color:var(--secondary-text-color);margin-bottom:4px;">Quick preset</label>
-            ${presetDropdown(`sp-${probeIndex}`, presetIndex)}
-            <div style="margin-top:12px;">
-              <label style="display:block;font-size:0.85em;color:var(--secondary-text-color);margin-bottom:4px;">Target temperature (°C)</label>
-              ${tempInput(`cp-target-sp-${probeIndex}`, temp)}
+            <div id="cp-form-${slotKey}">
+              ${_presetSelector(slotKey, state)}
+              <div style="margin-top:4px;">
+                <label style="display:block;font-size:0.85em;color:var(--secondary-text-color);margin-bottom:4px;">Target temperature (°C)</label>
+                ${tempInput(`cp-target-${slotKey}`, state.temp)}
+              </div>
             </div>
             <button id="cp-start-single"
               style="width:100%;padding:12px;margin-top:16px;background:var(--primary-color);
@@ -395,49 +524,19 @@ class CookPredictorCard extends HTMLElement {
         </div>
       </ha-card>`;
 
-    const presetEl = this.querySelector(`#cp-preset-sp-${probeIndex}`);
-    const targetEl = this.querySelector(`#cp-target-sp-${probeIndex}`);
-    if (presetEl) {
-      presetEl.addEventListener("change", (e) => {
-        const idx = e.target.value !== "" ? parseInt(e.target.value, 10) : null;
-        if (idx !== null) {
-          const t = PRESETS[idx].temp;
-          if (targetEl) targetEl.value = t;
-          this._idleState[probeIndex] = { presetIndex: idx, temp: t };
-        } else {
-          this._idleState[probeIndex] = { presetIndex: null, temp: parseFloat(targetEl?.value) || 74 };
-        }
-        this._persistIdleState();
-      });
-    }
-    if (targetEl) {
-      targetEl.addEventListener("input", (e) => {
-        const current = this._idleState[probeIndex] || {};
-        this._idleState[probeIndex] = { presetIndex: current.presetIndex ?? null, temp: parseFloat(e.target.value) || 74 };
-        this._persistIdleState();
-      });
-    }
-    const startBtn = this.querySelector("#cp-start-single");
-    if (startBtn) {
-      startBtn.addEventListener("click", () => {
-        const target = parseFloat(targetEl ? targetEl.value : "74") || 74;
-        const presetIdx = presetEl && presetEl.value !== "" ? parseInt(presetEl.value, 10) : null;
-        const cookName = presetIdx != null && PRESETS[presetIdx] ? PRESETS[presetIdx].name : "Custom";
-        this._saveActivePreset(probeIndex, presetIdx);
-        this._callStart({ target_temp: target, probe_mode: "individual", probe_index: probeIndex, cook_name: cookName });
-      });
-    }
+    this._wireIdleSlot(slotKey, slotKey, { startId: "cp-start-single", isIndividual: true, probeIndex });
   }
 
   _idleCombinedForm() {
-    const { presetIndex, temp } = this._slotState("combined");
+    const state = this._slotState("combined");
     return `
       <div>
-        <label style="display:block;font-size:0.85em;color:var(--secondary-text-color);margin-bottom:4px;">Quick preset</label>
-        ${presetDropdown("combined", presetIndex)}
-        <div style="margin-top:12px;">
-          <label style="display:block;font-size:0.85em;color:var(--secondary-text-color);margin-bottom:4px;">Target temperature (°C)</label>
-          ${tempInput("cp-target-combined", temp)}
+        <div id="cp-form-combined">
+          ${_presetSelector("combined", state)}
+          <div style="margin-top:4px;">
+            <label style="display:block;font-size:0.85em;color:var(--secondary-text-color);margin-bottom:4px;">Target temperature (°C)</label>
+            ${tempInput("cp-target-combined", state.temp)}
+          </div>
         </div>
         <button id="cp-start-combined"
           style="width:100%;padding:12px;margin-top:16px;background:var(--primary-color);
@@ -449,21 +548,21 @@ class CookPredictorCard extends HTMLElement {
   }
 
   _idleIndividualSlots(available) {
-    // available: array of probe indices (0-based) that are currently reachable
     const probeLabels = ["Probe 1", "Probe 2", "Probe 3"];
     let html = "";
     for (const i of available) {
-      const { presetIndex, temp } = this._slotState(i);
+      const state = this._slotState(i);
       html += `
         <div style="border:1px solid var(--divider-color);border-radius:10px;padding:14px;margin-bottom:12px;">
           <div style="font-size:0.9em;font-weight:600;margin-bottom:10px;color:var(--primary-color);">
             ${probeLabels[i] || `Probe ${i + 1}`}
           </div>
-          <label style="display:block;font-size:0.8em;color:var(--secondary-text-color);margin-bottom:4px;">Quick preset</label>
-          ${presetDropdown(i, presetIndex)}
-          <div style="margin-top:10px;">
-            <label style="display:block;font-size:0.8em;color:var(--secondary-text-color);margin-bottom:4px;">Target (°C)</label>
-            ${tempInput(`cp-target-${i}`, temp)}
+          <div id="cp-form-${i}">
+            ${_presetSelector(i, state)}
+            <div style="margin-top:4px;">
+              <label style="display:block;font-size:0.8em;color:var(--secondary-text-color);margin-bottom:4px;">Target (°C)</label>
+              ${tempInput(`cp-target-${i}`, state.temp)}
+            </div>
           </div>
           <button id="cp-start-${i}"
             style="width:100%;padding:10px;margin-top:10px;background:var(--primary-color);
@@ -476,72 +575,111 @@ class CookPredictorCard extends HTMLElement {
     return html;
   }
 
+  // Rebuild only the preset selector + temp label inside one form wrapper div,
+  // then re-wire its event handlers.  Much cheaper than a full card re-render
+  // and avoids scroll jumps / losing focus on sibling elements.
+  _refreshForm(idSuffix, stateKey, opts) {
+    const container = this.querySelector(`#cp-form-${idSuffix}`);
+    if (!container) { this._render(); return; }
+    const state = this._slotState(stateKey);
+    container.innerHTML = `
+      ${_presetSelector(idSuffix, state)}
+      <div style="margin-top:4px;">
+        <label style="display:block;font-size:0.85em;color:var(--secondary-text-color);margin-bottom:4px;">
+          Target temperature (°C)
+        </label>
+        ${tempInput(`cp-target-${idSuffix}`, state.temp)}
+      </div>`;
+    this._wireIdleSlot(stateKey, idSuffix, opts);
+  }
+
   _wireIdleCombined() {
-    const presetEl = this.querySelector("#cp-preset-combined");
-    const targetEl = this.querySelector("#cp-target-combined");
-    if (presetEl) {
-      presetEl.addEventListener("change", (e) => {
-        const idx = e.target.value !== "" ? parseInt(e.target.value, 10) : null;
-        if (idx !== null) {
-          const temp = PRESETS[idx].temp;
-          if (targetEl) targetEl.value = temp;
-          this._idleState["combined"] = { presetIndex: idx, temp };
-        } else {
-          this._idleState["combined"] = { presetIndex: null, temp: parseFloat(targetEl?.value) || 74 };
-        }
-        this._persistIdleState();
-      });
-    }
-    if (targetEl) {
-      targetEl.addEventListener("input", (e) => {
-        const current = this._idleState["combined"] || {};
-        this._idleState["combined"] = { presetIndex: current.presetIndex ?? null, temp: parseFloat(e.target.value) || 74 };
-        this._persistIdleState();
-      });
-    }
-    const startBtn = this.querySelector("#cp-start-combined");
-    if (startBtn) {
-      startBtn.addEventListener("click", () => {
-        const target = parseFloat(targetEl ? targetEl.value : "74") || 74;
-        const presetIdx = presetEl && presetEl.value !== "" ? parseInt(presetEl.value, 10) : null;
-        const cookName = presetIdx != null && PRESETS[presetIdx] ? PRESETS[presetIdx].name : "Custom";
-        this._saveActivePreset("combined", presetIdx);
-        this._callStart({ target_temp: target, probe_mode: "combined", cook_name: cookName });
-      });
-    }
+    this._wireIdleSlot("combined", "combined", { startId: "cp-start-combined" });
   }
 
   _wireIdleProbeSlot(i) {
-    const presetEl = this.querySelector(`#cp-preset-${i}`);
-    const targetEl = this.querySelector(`#cp-target-${i}`);
-    if (presetEl) {
-      presetEl.addEventListener("change", (e) => {
-        const idx = e.target.value !== "" ? parseInt(e.target.value, 10) : null;
-        if (idx !== null) {
-          const temp = PRESETS[idx].temp;
-          if (targetEl) targetEl.value = temp;
-          this._idleState[i] = { presetIndex: idx, temp };
+    this._wireIdleSlot(i, i, { startId: `cp-start-${i}`, isIndividual: true, probeIndex: i });
+  }
+
+  // Shared event-wiring for any idle slot (combined, individual, single-probe).
+  //   stateKey  — key in this._idleState  (e.g. "combined", 0, "sp-0")
+  //   idSuffix  — suffix used in element IDs and data-slot attrs
+  //   opts.startId     — id of the start button
+  //   opts.isIndividual — if true, calls start_cook with probe_mode:"individual"
+  //   opts.probeIndex  — probe index for individual mode
+  _wireIdleSlot(stateKey, idSuffix, opts = {}) {
+    const getS = () => this._idleState[stateKey] || { category: null, cut: null, doneness: null, temp: 74 };
+    const upd = (patch) => {
+      this._idleState[stateKey] = { ...getS(), ...patch };
+      this._persistIdleState();
+    };
+
+    // Category pill buttons — use targeted form refresh to avoid scroll jumps
+    this.querySelectorAll(`button[data-action="cat"][data-slot="${idSuffix}"]`).forEach((btn) => {
+      btn.addEventListener("click", () => {
+        upd({ category: btn.dataset.val, cut: null, doneness: null, temp: 74 });
+        this._refreshForm(idSuffix, stateKey, opts);
+      });
+    });
+
+    // Cut dropdown — targeted refresh to show/hide doneness select
+    const cutEl = this.querySelector(`#cp-cut-${idSuffix}`);
+    if (cutEl) {
+      cutEl.addEventListener("change", () => {
+        if (!_presets) return;
+        const s = getS();
+        const catObj = _presets.categories.find((c) => c.id === s.category);
+        const cutObj = catObj?.cuts.find((c) => c.id === cutEl.value);
+        if (cutObj && cutObj.doneness.length === 1) {
+          // Single-doneness cut — auto-select it immediately
+          upd({ cut: cutEl.value, doneness: cutObj.doneness[0].id, temp: cutObj.doneness[0].temp });
         } else {
-          this._idleState[i] = { presetIndex: null, temp: parseFloat(targetEl?.value) || 74 };
+          upd({ cut: cutEl.value, doneness: null });
         }
-        this._persistIdleState();
+        this._refreshForm(idSuffix, stateKey, opts);
       });
     }
+
+    // Doneness dropdown
+    const targetEl = this.querySelector(`#cp-target-${idSuffix}`);
+    const donEl = this.querySelector(`#cp-don-${idSuffix}`);
+    if (donEl) {
+      donEl.addEventListener("change", () => {
+        if (!_presets) return;
+        const s = getS();
+        const catObj = _presets.categories.find((c) => c.id === s.category);
+        const cutObj = catObj?.cuts.find((c) => c.id === s.cut);
+        const donObj = cutObj?.doneness.find((d) => d.id === donEl.value);
+        const temp = donObj?.temp ?? s.temp;
+        upd({ doneness: donEl.value, temp });
+        if (targetEl) targetEl.value = temp;
+      });
+    }
+
+    // Manual temp input
     if (targetEl) {
       targetEl.addEventListener("input", (e) => {
-        const current = this._idleState[i] || {};
-        this._idleState[i] = { presetIndex: current.presetIndex ?? null, temp: parseFloat(e.target.value) || 74 };
-        this._persistIdleState();
+        upd({ temp: parseFloat(e.target.value) || 74 });
       });
     }
-    const startBtn = this.querySelector(`#cp-start-${i}`);
+
+    // Start button
+    const startBtn = opts.startId ? this.querySelector(`#${opts.startId}`) : null;
     if (startBtn) {
       startBtn.addEventListener("click", () => {
-        const target = parseFloat(targetEl ? targetEl.value : 74);
-        const presetIdx = presetEl && presetEl.value !== "" ? parseInt(presetEl.value, 10) : null;
-        const cookName = presetIdx != null && PRESETS[presetIdx] ? PRESETS[presetIdx].name : "Custom";
-        this._saveActivePreset(i, presetIdx);
-        this._callStart({ target_temp: target, probe_mode: "individual", probe_index: i, cook_name: cookName });
+        const s = getS();
+        const cookName = _makeCookName(s.category, s.cut, s.doneness);
+        this._saveActivePreset(stateKey, cookName);
+        if (opts.isIndividual) {
+          this._callStart({
+            target_temp: s.temp,
+            probe_mode: "individual",
+            probe_index: opts.probeIndex,
+            cook_name: cookName,
+          });
+        } else {
+          this._callStart({ target_temp: s.temp, probe_mode: "combined", cook_name: cookName });
+        }
       });
     }
   }
@@ -616,6 +754,11 @@ class CookPredictorCard extends HTMLElement {
     const phaseColor = { heating: "var(--warning-color)", stall: "var(--error-color)", finishing: "var(--success-color)" }[phase] || "var(--primary-color)";
     const phaseIcon = { heating: "mdi:fire", stall: "mdi:pause-circle-outline", finishing: "mdi:flag-checkered" }[phase] || "mdi:fire";
     const confDots = { low: "●○○", medium: "●●○", high: "●●●" }[confidence] || "";
+    const modelBadge = attrs.prediction_model === "ml"
+      ? `<span style="font-size:0.7em;background:rgba(76,175,80,0.15);color:#4caf50;border-radius:3px;padding:1px 4px;margin-left:5px;vertical-align:middle;">ML</span>`
+      : attrs.prediction_model === "physics"
+      ? `<span style="font-size:0.7em;color:var(--secondary-text-color);opacity:0.5;margin-left:5px;vertical-align:middle;">PHY</span>`
+      : "";
 
     // ETA: from eta_entity if configured, else compute from timeRemaining
     let etaDisplay = "";
@@ -656,11 +799,15 @@ class CookPredictorCard extends HTMLElement {
       }
     }
 
-    // Pull-from-heat: alert when current temp ≥ calculated pull point
+    // Pull-from-heat: alert when current temp ≥ calculated pull point AND
+    // close to done (≤ 10 min remaining). Without the time guard, the alert
+    // fires whenever the current temp coincidentally equals the pull temp —
+    // which can happen 30+ minutes before the cook finishes.
     const pullTemp = attrs.pull_temp ?? null;
     const currentTemp = attrs.current_temp ?? null;
     const shouldPull = pullTemp != null && currentTemp != null
-      && currentTemp >= pullTemp && phase !== "done";
+      && currentTemp >= pullTemp && phase !== "done"
+      && (timeRemaining == null || timeRemaining <= 10);
 
     // Ring colour shifts to warning orange when it's time to pull
     const ringColor = shouldPull ? "var(--warning-color)" : phaseColor;
@@ -696,7 +843,7 @@ class CookPredictorCard extends HTMLElement {
             <div style="text-align:right;font-size:0.8em;color:var(--secondary-text-color);line-height:1.6;">
               <div>${attrs.target_temp || "?"}°C</div>
               ${!shouldPull && confDots
-                ? `<div style="letter-spacing:2px;">${confDots}</div>`
+                ? `<div style="letter-spacing:2px;">${confDots}${modelBadge}</div>`
                 : ""}
             </div>
           </div>
@@ -813,6 +960,7 @@ class CookPredictorCard extends HTMLElement {
           targetTemp: attrs.target_temp,
           phase: attrs.phase || "collecting",
           confidence: attrs.confidence || "low",
+          predictionModel: attrs.prediction_model || "",
           timeRemaining: parseFloat(state.state) || null,
           readingsCount: attrs.readings_count || 0,
           pullTemp: attrs.pull_temp ?? null,
@@ -825,6 +973,7 @@ class CookPredictorCard extends HTMLElement {
           targetTemp: attrs[`target_temp_${n}`],
           phase: attrs[`probe_${n}_phase`] || "collecting",
           confidence: attrs[`probe_${n}_confidence`] || "low",
+          predictionModel: attrs[`probe_${n}_prediction_model`] || "",
           timeRemaining: attrs[`probe_${n}_time_remaining`] || null,
           readingsCount: attrs[`probe_${n}_readings_count`] || 0,
           pullTemp: attrs[`probe_${n}_pull_temp`] ?? null,
@@ -860,14 +1009,15 @@ class CookPredictorCard extends HTMLElement {
 
       if (!pd.active) {
         // ── Inactive: show setup form ──────────────────────────────────
-        const { presetIndex: idlePresetIdx, temp: idleTemp } = this._slotState(i);
+        const idleState = this._slotState(i);
         contentBlock = `
           <div style="padding:8px 0 0;">
-            <label style="display:block;font-size:0.8em;color:var(--secondary-text-color);margin-bottom:4px;">Quick preset</label>
-            ${presetDropdown(`idle-${i}`, idlePresetIdx)}
-            <div style="margin-top:8px;">
-              <label style="display:block;font-size:0.8em;color:var(--secondary-text-color);margin-bottom:4px;">Target (°C)</label>
-              ${tempInput(`cp-idle-target-${i}`, idleTemp)}
+            <div id="cp-form-idle-${i}">
+              ${_presetSelector(`idle-${i}`, idleState)}
+              <div style="margin-top:4px;">
+                <label style="display:block;font-size:0.8em;color:var(--secondary-text-color);margin-bottom:4px;">Target (°C)</label>
+                ${tempInput(`cp-target-idle-${i}`, idleState.temp)}
+              </div>
             </div>
           </div>`;
         actionBlock = `
@@ -970,7 +1120,8 @@ class CookPredictorCard extends HTMLElement {
         const shouldPull = pd.pullTemp != null
           && pd.currentTemp != null
           && pd.currentTemp >= pd.pullTemp
-          && pd.phase !== "done";
+          && pd.phase !== "done"
+          && (pd.timeRemaining == null || pd.timeRemaining <= 10);
 
         // Countdown ring — always shows time remaining in individual mode
         let progress = 0;
@@ -1074,6 +1225,11 @@ class CookPredictorCard extends HTMLElement {
       }
 
       const confDots = { low: "●○○", medium: "●●○", high: "●●●" }[pd.confidence] || "";
+      const indivModelBadge = pd.predictionModel === "ml"
+        ? `<span style="font-size:0.7em;background:rgba(76,175,80,0.15);color:#4caf50;border-radius:3px;padding:1px 4px;margin-left:5px;vertical-align:middle;">ML</span>`
+        : pd.predictionModel === "physics"
+        ? `<span style="font-size:0.7em;color:var(--secondary-text-color);opacity:0.5;margin-left:5px;vertical-align:middle;">PHY</span>`
+        : "";
       const showPhaseDetail = pd.active && pd.phase !== "collecting" && pd.phase !== "done";
       const probePresetName = pd.active ? this._getActivePresetName(i) : null;
 
@@ -1095,7 +1251,7 @@ class CookPredictorCard extends HTMLElement {
                      ? `<div style="font-weight:500;color:var(--primary-text-color);">${probePresetName}</div>`
                      : ""}
                    <div>${pd.targetTemp || "?"}°C${showPhaseDetail && confDots
-                     ? `<span style="margin-left:6px;letter-spacing:2px;">${confDots}</span>`
+                     ? `<span style="margin-left:6px;letter-spacing:2px;">${confDots}</span>${indivModelBadge}`
                      : ""}</div>`
                 : `<div>Not started</div>`}
             </div>
@@ -1134,37 +1290,16 @@ class CookPredictorCard extends HTMLElement {
     // Start buttons for idle probe slots inside the active-individual view
     this.querySelectorAll(".cp-start-idle-probe").forEach((btn) => {
       const i = parseInt(btn.dataset.index, 10);
-      const presetEl = this.querySelector(`#cp-preset-idle-${i}`);
-      const targetEl = this.querySelector(`#cp-idle-target-${i}`);
-      if (presetEl) {
-        presetEl.addEventListener("change", (e) => {
-          const idx = e.target.value !== "" ? parseInt(e.target.value, 10) : null;
-          if (idx !== null) {
-            const temp = PRESETS[idx].temp;
-            if (targetEl) targetEl.value = temp;
-            this._idleState[i] = { presetIndex: idx, temp };
-          } else {
-            this._idleState[i] = { presetIndex: null, temp: parseFloat(targetEl?.value) || 74 };
-          }
-          this._persistIdleState();
-        });
-      }
-      if (targetEl) {
-        targetEl.addEventListener("input", (e) => {
-          const current = this._idleState[i] || {};
-          this._idleState[i] = {
-            presetIndex: current.presetIndex ?? null,
-            temp: parseFloat(e.target.value) || 74,
-          };
-          this._persistIdleState();
-        });
-      }
+      this._wireIdleSlot(i, `idle-${i}`, {
+        startId: null,   // start button wired separately via class selector below
+        isIndividual: true,
+        probeIndex: i,
+      });
       btn.addEventListener("click", () => {
-        const target = parseFloat(targetEl ? targetEl.value : "74") || 74;
-        const presetIdx = presetEl && presetEl.value !== "" ? parseInt(presetEl.value, 10) : null;
-        const cookName = presetIdx != null && PRESETS[presetIdx] ? PRESETS[presetIdx].name : "Custom";
-        this._saveActivePreset(i, presetIdx);
-        this._callStart({ target_temp: target, probe_mode: "individual", probe_index: i, cook_name: cookName });
+        const s = this._slotState(i);
+        const cookName = _makeCookName(s.category, s.cut, s.doneness);
+        this._saveActivePreset(i, cookName);
+        this._callStart({ target_temp: s.temp, probe_mode: "individual", probe_index: i, cook_name: cookName });
       });
     });
   }

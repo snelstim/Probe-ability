@@ -181,6 +181,16 @@ class CookTimeRemainingSensor(CookPredictorSensorBase):
             "probe_active": list(self._monitor.probe_active),
         }
 
+        # Always expose ML availability on the primary sensor so it's visible
+        # in Developer Tools without needing an active cook.
+        if idx == 0:
+            try:
+                from .ml_predictor import ml_predictor  # noqa: PLC0415
+                # _load() imports ml_model_code — succeeds if the file is present
+                attrs["ml_available"] = ml_predictor._load()
+            except Exception:  # noqa: BLE001
+                attrs["ml_available"] = False
+
         if idx >= len(predictors):
             return attrs
 
@@ -201,6 +211,7 @@ class CookTimeRemainingSensor(CookPredictorSensorBase):
                 {
                     "phase": result.phase,
                     "confidence": result.confidence,
+                    "prediction_model": result.prediction_model,
                     "target_temp": predictor.target_temp,
                     "readings_count": len(predictor.readings),
                 }
@@ -236,6 +247,7 @@ class CookTimeRemainingSensor(CookPredictorSensorBase):
                     extra_result = extra_pred.predict()
                     attrs[f"probe_{n}_phase"] = extra_result.phase
                     attrs[f"probe_{n}_confidence"] = extra_result.confidence
+                    attrs[f"probe_{n}_prediction_model"] = extra_result.prediction_model
                     attrs[f"probe_{n}_readings_count"] = len(extra_pred.readings)
                     if extra_result.rate_per_minute is not None:
                         attrs[f"probe_{n}_rate_c_per_minute"] = round(extra_result.rate_per_minute, 3)

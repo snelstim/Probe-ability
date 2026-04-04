@@ -6,13 +6,19 @@ A Home Assistant custom integration that predicts when your meat will reach a ta
 
 ## How it works
 
-Probe-ability fits an exponential curve to your temperature readings in real time using Newton's Law of Heating. After collecting ~10 readings over ~10 minutes, it starts predicting the time remaining and estimated completion time. Predictions improve continuously as more data arrives.
+Probe-ability uses a two-layer prediction system:
 
-**Stall detection** — During barbecue stalls (common with brisket and pork shoulder, caused by evaporative cooling), the exponential model stops fitting. Probe-ability detects this plateau and switches to linear extrapolation, flagging the prediction as low confidence until the stall ends and heating resumes.
+**1. ML model (primary)** — A Gradient Boosted Regressor trained on 178 real cooks from a Meater device. It predicts time remaining from 17 features: current and starting temperatures, heating rate, deceleration, elapsed time, ambient temperature statistics, stall detection, and meat type. It achieves ~3 minute mean absolute error across all meat types and is accurate from the moment collecting ends. The model is stored in `model.pkl` inside the component folder and requires `scikit-learn` (installed automatically by Home Assistant on first run).
 
-**EMA smoothing** — The heating rate is smoothed using an exponential moving average (α = 0.15) to dampen sensor noise without hiding real trends. This prevents the estimated time remaining from jumping around between readings.
+**2. Physics model (fallback)** — Newton's Law of Heating: fits an exponential curve to recent readings and solves for the time at which the meat will reach target temperature. Used automatically if the ML model is unavailable (model file missing, scikit-learn not yet installed, or prediction error).
 
-**Pull-from-heat warning** — Meat continues warming internally after being removed from heat (carryover cooking). Probe-ability calculates the pull temperature — the point at which you should remove the meat so it coasts up to your target. The pull temp is shown prominently once the meat is close to target.
+Both layers share the same data pipeline: readings are collected for ~10 minutes before any prediction is made, ensuring there is enough temperature history to compute the features the ML model needs.
+
+**Stall detection** — During barbecue stalls (common with brisket and pork shoulder), heating rate drops near zero. Probe-ability detects this plateau and flags predictions as low confidence. The ML model was trained on cooks that include stalls and handles them significantly better than the physics-only fallback.
+
+**EMA smoothing** — The time-remaining estimate is smoothed using an exponential moving average (α = 0.15) to dampen sensor noise without hiding real trends, preventing the display from jumping between readings.
+
+**Pull-from-heat warning** — Meat continues warming after removal from heat (carryover cooking). Probe-ability calculates the pull temperature and shows a prominent warning when the meat reaches it.
 
 ---
 
@@ -20,10 +26,16 @@ Probe-ability fits an exponential curve to your temperature readings in real tim
 
 ### 1. Integration
 
-1. Copy the `custom_components/probe_ability` folder into your HA `config/custom_components/` directory.
-2. Restart Home Assistant.
+1. Copy the `custom_components/probe_ability` folder into your HA `config/custom_components/` directory. Make sure `model.pkl` is included — it contains the trained ML model.
+2. Restart Home Assistant. On first run, HA will install `scikit-learn` automatically (this may take a minute).
 3. Go to **Settings → Devices & Services → Add Integration** and search for **Probe-ability**.
 4. Fill in the configuration form (see [Configuration](#configuration) below).
+
+Check the HA log for:
+```
+Probe-ability: ML model loaded
+```
+If this line appears, the ML model is active. If it's absent, predictions fall back to the physics model.
 
 ### 2. Lovelace Card
 
@@ -104,15 +116,20 @@ Pick a **preset** from the dropdown (e.g. *Beef Medium Rare — 54°C*) or type 
 
 ### Collecting data
 
-After starting, the card shows a progress bar while gathering the minimum data needed to make a reliable prediction (~10 readings over ~10 minutes). The bar fills as readings accumulate. You can cancel during this phase.
+After starting, the card shows a progress bar while gathering the minimum data needed to make a reliable prediction (~10 readings over ~10 minutes). The bar fills in two phases:
+
+1. **Phase 1** — reading count bar fills to 10/10
+2. **Phase 2** — data span bar fills as the 10-minute window accumulates, with a "Ready at HH:MM" estimate
+
+You can cancel during this phase.
 
 ### Active cook
 
 Once enough data is collected:
 
 - The card shows a circular ring timer with the time remaining
-- Toggle between **⏱ countdown** (ring drains as time passes) and **🌡 temp-up** (ring fills as temperature rises toward target)
-- Current internal and ambient temperatures, heating rate, cook phase, and confidence level are displayed
+- **Tap the ring** to toggle between **countdown** (ring drains as time passes) and **temperature** (ring fills as temperature rises toward target). A faint hint inside the ring shows which mode you're in.
+- Current internal and ambient temperatures, heating rate, ETA, cook phase, and confidence level are displayed
 - When the meat approaches the pull temperature, a **prominent warning** appears telling you to remove it from heat now
 
 ### Done
@@ -161,7 +178,7 @@ The primary `time_remaining` sensor (probe 1) exposes all attributes the card ne
 
 | Attribute | Type | Description |
 |---|---|---|
-| `phase` | string | `collecting`, `heating`, `stall`, or `done` |
+| `phase` | string | `collecting`, `heating`, `stall`, `finishing`, or `done` |
 | `confidence` | string | `low`, `medium`, or `high` |
 | `target_temp` | float | Target internal temperature (°C) |
 | `current_temp` | float | Latest internal temperature reading (°C) |
@@ -182,6 +199,7 @@ The primary `time_remaining` sensor (probe 1) exposes all attributes the card ne
 | `probe_2_confidence` / `probe_3_confidence` | Confidence for probe 2/3 |
 | `probe_2_time_remaining` / `probe_3_time_remaining` | Minutes remaining for probe 2/3 |
 | `probe_2_pull_temp` / `probe_3_pull_temp` | Pull temperature for probe 2/3 |
+| `probe_2_rate_c_per_minute` / `probe_3_rate_c_per_minute` | Heating rate for probe 2/3 |
 
 ---
 
@@ -194,7 +212,7 @@ Start a new cook. If a sensor is unavailable when this is called, a red error no
 | Parameter | Required | Default | Description |
 |---|---|---|---|
 | `target_temp` | No | 74 | Target internal temperature in °C |
-| `cook_name` | No | `"Cook"` | Name label for this cook |
+| `cook_name` | No | `"Cook"` | Name label for this cook — also used by the ML model to select the correct meat type profile |
 | `probe_mode` | No | `"combined"` | `"combined"` or `"individual"` |
 | `probe_index` | No | — | Which probe to start (0–2). Only used in individual mode |
 | `entry_id` | No | — | Target a specific integration instance (see below) |
@@ -202,6 +220,8 @@ Start a new cook. If a sensor is unavailable when this is called, a red error no
 **Combined mode** — omit `probe_index`. All configured probes with available sensors are started together.
 
 **Individual mode** — set `probe_mode: "individual"` and `probe_index` to start one specific probe.
+
+> **Tip:** Use a preset name that matches one of the card's built-in presets (e.g. `"Beef (Medium Rare)"`, `"Brisket"`, `"Pulled Pork"`) to give the ML model the most accurate meat type context. Custom names fall back to a generic beef profile.
 
 ### `probe_ability.stop_cook`
 
@@ -348,6 +368,7 @@ Lines starting with `#` are metadata headers and can be skipped by most tools.
 # probe_ability_export_version: 3
 # probe_index: 0
 # probe_mode: combined
+# cook_name: Brisket
 # target_temp_c: 96.0
 # reached_target: true
 # total_readings: 147
@@ -355,8 +376,11 @@ Lines starting with `#` are metadata headers and can be skipped by most tools.
 elapsed_s,internal_temp_c,ambient_temp_c,predicted_remaining_s,confidence
 0.0,22.50,120.00,,
 32.1,22.75,121.00,,
+645.0,29.00,125.00,4820.0,medium
 ...
 ```
+
+`predicted_remaining_s` and `confidence` are empty during the initial collecting phase and populated from the moment predictions begin. They are generated by replaying the cook through a fresh predictor instance at export time, reproducing exactly what was shown live.
 
 Read in Python:
 
@@ -373,21 +397,40 @@ df = pd.read_csv("cook_20260403_183000_probe1.csv", comment="#")
 |---|---|
 | Minimum readings before prediction | 10 readings AND 10 minutes of data span |
 | Reading debounce interval | 30 seconds |
-| Curve fitting window | 40-minute sliding window |
+| Curve fitting window (physics fallback) | 40-minute sliding window |
 | EMA smoothing factor (α) | 0.15 — half-life ≈ 4–5 readings (~2 min) |
 | Carryover cooking model | `clamp(rate × 5, min=3°C, max=10°C)` |
 | Stale probe exclusion (combined ETA) | Probe excluded after 5 minutes without a new reading |
 | State persistence | Survives HA restarts — cook state written to `.storage` |
-| External dependencies | None — only HA core |
+| External dependencies | `scikit-learn>=1.3.0` (ML model) |
 
 ### Prediction model
 
-1. **Exponential (Newton's Law of Heating):** Used when ambient temperature is significantly above the meat temperature. Fits a curve of the form `T(t) = T_ambient - (T_ambient - T_0) × e^(-kt)` to the recent reading window, then solves for the time at which `T = target`.
-2. **Linear fallback:** Used during stalls or when the meat temperature is close to ambient (e.g. crockpot/sous-vide). The rate of rise is estimated from recent readings and extrapolated linearly. Confidence is flagged as `low` until the model can fit the exponential again.
+**Primary — ML (Gradient Boosted Regressor):**
+
+Trained on 178 cooks across beef, pork, poultry, lamb, and fish. Predicts minutes remaining from 17 features:
+
+| Feature group | Features |
+|---|---|
+| Temperatures | Current internal, starting internal, target gap, current ambient, mean/std ambient so far |
+| Rates | Initial rate (first 10 min), recent rate (last 5 min), deceleration ratio |
+| Time | Elapsed minutes |
+| State | Stall flag (rate < 0.2°C/min in 60–80°C zone) |
+| Meat type | Category, animal, cut type, cut, doneness preset |
+
+Achieves ~3 min mean absolute error overall; accurate from the end of the collecting phase. Meat type context is taken from the `cook_name` parameter — use one of the card's built-in preset names for best accuracy.
+
+**Fallback — Physics (Newton's Law of Heating):**
+
+Fits the curve `T(t) = T_ambient − (T_ambient − T₀) × e^(−kt)` to recent readings via least-squares regression, then solves for when `T = target`. Switches to linear extrapolation during stalls or when ambient is too close to target. Used automatically when `model.pkl` is missing or scikit-learn is unavailable.
 
 ### Combined ETA
 
 In combined mode the displayed ETA is `max(time_remaining)` across all active non-stale probes. This is correct because the cook is only *done* when **all** probes reach their target — so the slowest probe drives the timer.
+
+### ML model file
+
+`model.pkl` lives inside `custom_components/probe_ability/` and is not tracked by git. If you re-clone the repository, copy it back from your Meater analysis output or re-run the training script.
 
 ---
 

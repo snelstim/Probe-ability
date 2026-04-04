@@ -7,23 +7,23 @@ The model predicts *minutes remaining* from 17 features:
   - 12 numeric: temperatures, rates, elapsed time, deceleration, stall flag
   - 5 categorical: meat category, animal, cut type, cut, doneness preset
 
-If model.pkl is not present or scikit-learn is unavailable, this module
-returns None from predict() and the caller falls back to the physics model.
+The 5 categorical fields are an artefact of Meater's data model. Category and
+animal are largely redundant, and cut_type is derivable from cut. Internally
+all five are still passed to the model (it was trained that way), but the
+user-facing API is simplified to just (cut, doneness) — see _COOK_NAME_MAP.
+
+ml_model_code.py contains the compiled pure-Python GBT; no scikit-learn needed.
 """
 
 from __future__ import annotations
 
 import logging
-import os
 
 _LOGGER = logging.getLogger(__name__)
 
-_MODEL_PATH = os.path.join(os.path.dirname(__file__), "model.pkl")
-
 # ---------------------------------------------------------------------------
-# Categorical encodings
-# Reconstructed from cook_summaries.csv unique values; LabelEncoder sorts
-# alphabetically and assigns integer codes 0, 1, 2, …
+# Internal encodings (LabelEncoder alphabetical order, from training data)
+# These are implementation details — users never need to touch them.
 # ---------------------------------------------------------------------------
 
 _CATEGORY_ENC: dict[str, int] = {
@@ -45,30 +45,115 @@ _CUT_ENC: dict[str, int] = {
     "shoulder": 20, "sirloin": 21, "steak": 22, "t_bone": 23,
     "tenderloin": 24, "thigh": 25, "tomahawk": 26, "topside": 27, "whole": 28,
 }
-_PRESET_ENC: dict[str, int] = {
-    "fall_apart": 0, "meater_recommends": 1, "medium": 2, "medium_rare": 3,
-    "medium_well": 4, "pulled": 5, "rare": 6, "well_done": 7,
+_DONENESS_ENC: dict[str, int] = {
+    "rare": 6, "medium_rare": 3, "medium": 2, "medium_well": 4,
+    "well_done": 7, "fall_apart": 0, "pulled": 5,
 }
 
-# Probe-ability preset name → (category, animal, cut_type, cut, preset) encoded
-# tuple using the dicts above.
-_COOK_NAME_MAP: dict[str, tuple[int, int, int, int, int]] = {
-    "Beef (Medium Rare)": (_CATEGORY_ENC["beef"],    _ANIMAL_ENC["beef"],    _CUT_TYPE_ENC["steak"], _CUT_ENC["steak"],    _PRESET_ENC["medium_rare"]),
-    "Beef (Medium)":      (_CATEGORY_ENC["beef"],    _ANIMAL_ENC["beef"],    _CUT_TYPE_ENC["steak"], _CUT_ENC["steak"],    _PRESET_ENC["medium"]),
-    "Beef (Well Done)":   (_CATEGORY_ENC["beef"],    _ANIMAL_ENC["beef"],    _CUT_TYPE_ENC["steak"], _CUT_ENC["steak"],    _PRESET_ENC["well_done"]),
-    "Pork":               (_CATEGORY_ENC["pork"],    _ANIMAL_ENC["pork"],    _CUT_TYPE_ENC["steak"], _CUT_ENC["loin"],     _PRESET_ENC["meater_recommends"]),
-    "Chicken / Poultry":  (_CATEGORY_ENC["poultry"], _ANIMAL_ENC["chicken"], _CUT_TYPE_ENC["chicken"],_CUT_ENC["breast"],  _PRESET_ENC["meater_recommends"]),
-    "Lamb (Medium Rare)": (_CATEGORY_ENC["lamb"],    _ANIMAL_ENC["lamb"],    _CUT_TYPE_ENC["steak"], _CUT_ENC["other"],    _PRESET_ENC["medium_rare"]),
-    "Lamb (Medium)":      (_CATEGORY_ENC["lamb"],    _ANIMAL_ENC["lamb"],    _CUT_TYPE_ENC["steak"], _CUT_ENC["other"],    _PRESET_ENC["medium"]),
-    "Brisket":            (_CATEGORY_ENC["beef"],    _ANIMAL_ENC["beef"],    _CUT_TYPE_ENC["roast"], _CUT_ENC["brisket"],  _PRESET_ENC["fall_apart"]),
-    "Pulled Pork":        (_CATEGORY_ENC["pork"],    _ANIMAL_ENC["pork"],    _CUT_TYPE_ENC["roast"], _CUT_ENC["shoulder"], _PRESET_ENC["pulled"]),
+# ---------------------------------------------------------------------------
+# Cut lookup: cut name → (category_enc, animal_enc, cut_type_enc, cut_enc)
+# This derives the three redundant fields automatically from the cut alone.
+# Add a new row here when adding cuts not listed below.
+# ---------------------------------------------------------------------------
+
+_CUT_LOOKUP: dict[str, tuple[int, int, int, int]] = {
+    # Beef steaks
+    "sirloin":   (0, 0, 7, _CUT_ENC["sirloin"]),
+    "rib_eye":   (0, 0, 7, _CUT_ENC["rib_eye"]),
+    "t_bone":    (0, 0, 7, _CUT_ENC["t_bone"]),
+    "rump":      (0, 0, 7, _CUT_ENC["rump"]),
+    "tomahawk":  (0, 0, 7, _CUT_ENC["tomahawk"]),
+    "picanha":   (0, 0, 7, _CUT_ENC["picanha"]),
+    "flank":     (0, 0, 7, _CUT_ENC["flank"]),
+    "tenderloin":(0, 0, 7, _CUT_ENC["tenderloin"]),
+    "steak":     (0, 0, 7, _CUT_ENC["steak"]),
+    # Beef roasts / slow cooks
+    "brisket":   (0, 0, 5, _CUT_ENC["brisket"]),
+    "chuck":     (0, 0, 5, _CUT_ENC["chuck"]),
+    "topside":   (0, 0, 5, _CUT_ENC["topside"]),
+    "roast":     (0, 0, 5, _CUT_ENC["roast"]),
+    # Beef other
+    "ground":    (0, 0, 4, _CUT_ENC["ground"]),
+    "burger":    (0, 0, 4, _CUT_ENC["burger"]),
+    "meatloaf":  (0, 0, 4, _CUT_ENC["meatloaf"]),
+    # Pork
+    "loin":      (4, 6, 7, _CUT_ENC["loin"]),
+    "belly":     (4, 6, 7, _CUT_ENC["belly"]),
+    "rib_pork":  (4, 6, 7, _CUT_ENC["rib_pork"]),
+    "rib_rack":  (4, 6, 5, _CUT_ENC["rib_rack"]),
+    "shoulder":  (4, 6, 5, _CUT_ENC["shoulder"]),
+    "butt":      (4, 6, 5, _CUT_ENC["butt"]),
+    # Poultry
+    "breast":      (5, 1, 0, _CUT_ENC["breast"]),   # chicken
+    "duck_breast": (5, 3, 3, _CUT_ENC["breast"]),   # duck: animal=3, cut_type=3
+    "thigh":       (5, 1, 0, _CUT_ENC["thigh"]),
+    "whole":       (5, 1, 0, _CUT_ENC["whole"]),
+    # Lamb
+    "leg_lamb":  (2, 4, 5, _CUT_ENC["leg_lamb"]),
+    # Fish
+    "fillet":    (1, 7, 6, _CUT_ENC["fillet"]),
+    # Generic fallback
+    "other":     (0, 0, 4, _CUT_ENC["other"]),
 }
-# Default when cook_name is "Custom" or not in the map: beef steak medium
-_DEFAULT_MEAT: tuple[int, int, int, int, int] = (
-    _CATEGORY_ENC["beef"], _ANIMAL_ENC["beef"],
-    _CUT_TYPE_ENC["steak"], _CUT_ENC["other"],
-    _PRESET_ENC["medium"],
-)
+
+
+def _encode(cut: str, doneness: str) -> tuple[int, int, int, int, int]:
+    """Encode a (cut, doneness) pair into the 5-tuple the model expects."""
+    cat, ani, ctt, cut_e = _CUT_LOOKUP.get(cut, _CUT_LOOKUP["other"])
+    prs = _DONENESS_ENC.get(doneness, _DONENESS_ENC["medium"])
+    return (cat, ani, ctt, cut_e, prs)
+
+
+# ---------------------------------------------------------------------------
+# Cook-name map — built dynamically from cook_presets.json so adding a new
+# preset only requires editing that one JSON file.
+# ---------------------------------------------------------------------------
+
+def _build_cook_name_map() -> dict[str, tuple[int, int, int, int, int]]:
+    """Load www/probe-ability/cook_presets.json and build the name → encoding map.
+
+    The JSON is located two levels above the component directory:
+        config/custom_components/probe_ability/  ← __file__
+        config/custom_components/
+        config/
+        config/www/probe-ability/cook_presets.json
+
+    Falls back to a minimal hardcoded set if the file is missing.
+    """
+    import json
+    from pathlib import Path
+    try:
+        json_path = Path(__file__).parent.parent.parent / "www" / "probe-ability" / "cook_presets.json"
+        data = json.loads(json_path.read_text())
+        result: dict[str, tuple[int, int, int, int, int]] = {}
+        for cat in data["categories"]:
+            for cut in cat["cuts"]:
+                for don in cut["doneness"]:
+                    name = f"{cat['label']} {cut['label']} {don['label']}"
+                    result[name] = _encode(cut["id"], don["id"])
+        _LOGGER.debug("Probe-ability: loaded %d presets from cook_presets.json", len(result))
+        return result
+    except Exception as exc:  # noqa: BLE001
+        _LOGGER.warning(
+            "Probe-ability: could not load cook_presets.json (%s) — using built-in defaults", exc
+        )
+        return {
+            "Beef Sirloin Medium Rare":        _encode("sirloin",  "medium_rare"),
+            "Beef Sirloin Medium":             _encode("sirloin",  "medium"),
+            "Beef Sirloin Well Done":          _encode("sirloin",  "well_done"),
+            "Pork Loin / Chop Medium":         _encode("loin",     "medium"),
+            "Poultry Chicken Breast Medium":   _encode("breast",   "medium"),
+            "Lamb Leg Medium Rare":            _encode("leg_lamb", "medium_rare"),
+            "Lamb Leg Medium":                 _encode("leg_lamb", "medium"),
+            "Beef Brisket Fall Apart":         _encode("brisket",  "fall_apart"),
+            "Pork Shoulder Pulled":            _encode("shoulder", "pulled"),
+        }
+
+
+_COOK_NAME_MAP: dict[str, tuple[int, int, int, int, int]] = _build_cook_name_map()
+
+# Fallback encoding for "Custom" or any unrecognised cook name.
+_DEFAULT_MEAT: tuple[int, int, int, int, int] = _encode("steak", "medium")
 
 # Feature order must match the column order used during training exactly.
 _FEATURE_ORDER: list[str] = [
@@ -150,33 +235,33 @@ def _build_features(
 
 
 # ---------------------------------------------------------------------------
-# MLPredictor — lazy-loading singleton
+# MLPredictor — pure-Python inference, no scikit-learn required
 # ---------------------------------------------------------------------------
 
 class MLPredictor:
-    """Wraps the pre-trained GradientBoostingRegressor for cook-time prediction."""
+    """Runs cook-time predictions using a pure-Python GBT implementation.
+
+    The model is compiled into ml_model_code.py (base64-encoded struct data +
+    a tiny traversal function) so no scikit-learn or other ML library is needed.
+    """
 
     def __init__(self) -> None:
-        self._model = None
+        self._score_fn = None
         self._load_attempted = False
 
     def _load(self) -> bool:
-        if self._model is not None:
+        if self._score_fn is not None:
             return True
         if self._load_attempted:
             return False
         self._load_attempted = True
-        if not os.path.exists(_MODEL_PATH):
-            _LOGGER.debug("Probe-ability: model.pkl not found at %s — using physics model", _MODEL_PATH)
-            return False
         try:
-            import pickle  # noqa: PLC0415
-            with open(_MODEL_PATH, "rb") as fh:
-                self._model = pickle.load(fh)  # noqa: S301
-            _LOGGER.info("Probe-ability: ML model loaded from %s", _MODEL_PATH)
+            from .ml_model_code import score  # noqa: PLC0415
+            self._score_fn = score
+            _LOGGER.info("Probe-ability: ML model loaded (pure-Python, no scikit-learn required)")
             return True
         except Exception as exc:  # noqa: BLE001
-            _LOGGER.warning("Probe-ability: ML model failed to load (%s) — using physics model", exc)
+            _LOGGER.warning("Probe-ability: ML model unavailable (%s) — using physics model", exc)
             return False
 
     def predict(
@@ -195,9 +280,8 @@ class MLPredictor:
             return None
         try:
             feats = _build_features(readings, target_temp, cook_name, start_temp)
-            row = [[feats[k] for k in _FEATURE_ORDER]]
-            result = self._model.predict(row)[0]
-            return max(0.0, float(result))
+            row = [feats[k] for k in _FEATURE_ORDER]
+            return max(0.0, float(self._score_fn(row)))
         except Exception as exc:  # noqa: BLE001
             _LOGGER.debug("Probe-ability: ML predict error (%s)", exc)
             return None

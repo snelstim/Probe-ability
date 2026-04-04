@@ -3,3 +3,5 @@
 __pycache__/
 *.pyc
 todo.txt
+meater_exports/
+custom_components/probe_ability/model.pkl

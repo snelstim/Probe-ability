@@ -1,4 +1,7 @@
-"""Standalone cook prediction engine using Newton's Law of Heating.
+"""Cook prediction engine with ML primary model and physics fallback.
+
+Primary: GradientBoostingRegressor (ml_predictor.py / model.pkl).
+Fallback: Newton's Law of Heating exponential curve fit.
 
 This module has no Home Assistant dependencies and can be tested independently.
 Feed it (timestamp, internal_temp, ambient_temp) readings and it predicts
@@ -36,6 +39,13 @@ class CookPredictor:
     def __init__(self, target_temp: float) -> None:
         self._target_temp = target_temp
         self.readings: list[tuple[float, float, float]] = []  # (ts, internal, ambient)
+
+        # Cook name — used by the ML model to select the meat taxonomy encoding.
+        # Set by CookMonitor when a cook starts; defaults to "" (triggers fallback).
+        self.cook_name: str = ""
+
+        # Internal temperature at the very first reading — ML feature T_internal_start.
+        self._start_temp: float | None = None
 
         # Smoothed time-remaining (seconds) — updated via EMA on every valid
         # prediction so short-term rate noise doesn't cause large display swings.
@@ -76,6 +86,8 @@ class CookPredictor:
     ) -> None:
         """Add a temperature reading."""
         self.readings.append((timestamp, internal_temp, ambient_temp))
+        if self._start_temp is None:
+            self._start_temp = internal_temp
 
     def reset(self) -> None:
         """Clear all readings for a new cook."""
@@ -87,6 +99,8 @@ class CookPredictor:
             "target_temp": self._target_temp,
             "readings": self.readings,
             "last_stable_remaining": self._last_stable_remaining,
+            "cook_name": self.cook_name,
+            "start_temp": self._start_temp,
         }
 
     @classmethod
@@ -95,6 +109,8 @@ class CookPredictor:
         predictor = cls(target_temp=data["target_temp"])
         predictor.readings = [tuple(r) for r in data.get("readings", [])]
         predictor._last_stable_remaining = data.get("last_stable_remaining")
+        predictor.cook_name = data.get("cook_name", "")
+        predictor._start_temp = data.get("start_temp")
         return predictor
 
     def predict(self) -> PredictionResult:
@@ -162,8 +178,10 @@ class CookPredictor:
                 result.eta_timestamp = now_ts + self._last_stable_remaining
             return result
 
-        # Primary: exponential fit
-        remaining = self._exponential_estimate(windowed, avg_ambient, current_temp)
+        # Primary: ML model (falls back to physics if model unavailable)
+        remaining = self._ml_estimate()
+        if remaining is None:
+            remaining = self._exponential_estimate(windowed, avg_ambient, current_temp)
 
         if remaining is not None and remaining > 0:
             remaining = self._smooth(remaining)
@@ -195,6 +213,26 @@ class CookPredictor:
             result.time_remaining_seconds = self._last_stable_remaining
             result.eta_timestamp = now_ts + self._last_stable_remaining
         return result
+
+    def _ml_estimate(self) -> float | None:
+        """Return ML-predicted seconds remaining, or None if unavailable.
+
+        Imports ml_predictor lazily so the module works without scikit-learn
+        installed (HA will log a warning and fall back to the physics model).
+        """
+        try:
+            from .ml_predictor import ml_predictor  # noqa: PLC0415
+        except Exception:  # noqa: BLE001
+            return None
+        if len(self.readings) < self._min_readings:
+            return None
+        result = ml_predictor.predict(
+            readings=self.readings,
+            target_temp=self._target_temp,
+            cook_name=self.cook_name,
+            start_temp=self._start_temp if self._start_temp is not None else self.readings[0][1],
+        )
+        return result * 60.0 if result is not None else None
 
     def _smooth(self, new_value: float) -> float:
         """Blend a new estimate with the previous one via EMA.

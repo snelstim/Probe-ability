@@ -315,6 +315,7 @@ class CookMonitor:
                 self.probe_active[0] = True
                 self.probe_target[0] = self.predictors[0].target_temp
                 self.probe_name[0] = data.get("cook_name", DEFAULT_COOK_NAME)
+                self.predictors[0].cook_name = self.probe_name[0]
 
             if self.active:
                 self._start_listening()
@@ -381,6 +382,8 @@ class CookMonitor:
             if i >= len(self.predictors):
                 continue
             self.predictors[i] = CookPredictor(target_temp=target_temp)
+            self.predictors[i].cook_name = cook_name
+            self.predictors[i]._start_temp = None
             self.probe_active[i] = True
             self.probe_target[i] = target_temp
             self.probe_name[i] = cook_name

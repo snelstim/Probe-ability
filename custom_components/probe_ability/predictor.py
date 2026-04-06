@@ -56,6 +56,9 @@ class CookPredictor:
         # EMA smoothing factor: lower = more stable, slower to react to real
         # changes.  0.15 → a sudden step is ~50% reflected after 4–5 updates
         # (≈2 min at 30 s/reading).
+        # When ambient changes significantly (user cranks smoker/oven), the alpha
+        # is boosted automatically by _adaptive_alpha() so predictions catch up
+        # faster without making normal stable-ambient cooks jumpy.
         self._ema_alpha: float = 0.15
 
         # Tuning constants
@@ -240,15 +243,40 @@ class CookPredictor:
         )
         return result * 60.0 if result is not None else None
 
+    def _adaptive_alpha(self) -> float:
+        """EMA weight for the current update.
+
+        Normally returns the base alpha (0.15) for stable, noise-free smoothing.
+        When the ambient temperature has recently jumped (user cranked the smoker
+        or oven mid-cook), we boost alpha so predictions respond within 2–3
+        readings rather than 20+, then let it decay back once things stabilise.
+
+        Formula: compare the mean of the last 5 ambient readings against the
+        mean of all earlier readings.  Each extra 10 °C of step adds 0.1 to
+        alpha, capped at 0.7.
+        """
+        n = len(self.readings)
+        if n < 10:
+            return self._ema_alpha
+        recent = [r[2] for r in self.readings[-5:]]
+        prior  = [r[2] for r in self.readings[:-5]]
+        recent_mean = sum(recent) / len(recent)
+        prior_mean  = sum(prior)  / len(prior)
+        delta = abs(recent_mean - prior_mean)
+        boost = delta / 10.0 * 0.1          # +0.1 per 10 °C step
+        return min(0.7, self._ema_alpha + boost)
+
     def _smooth(self, new_value: float) -> float:
         """Blend a new estimate with the previous one via EMA.
 
         First call (no previous value) returns the raw value so we don't
-        start with a biased estimate.
+        start with a biased estimate.  Uses _adaptive_alpha() so the smoothing
+        automatically reacts faster when the ambient temperature has changed.
         """
         if self._last_stable_remaining is None:
             return new_value
-        return self._ema_alpha * new_value + (1 - self._ema_alpha) * self._last_stable_remaining
+        alpha = self._adaptive_alpha()
+        return alpha * new_value + (1 - alpha) * self._last_stable_remaining
 
     # ── Internal helpers ────────────────────────────────────────────────
 
@@ -315,43 +343,60 @@ class CookPredictor:
     def _exponential_estimate(
         self,
         readings: list[tuple[float, float, float]],
-        avg_ambient: float,
+        avg_ambient: float,  # kept for API compatibility but not used for k fit
         current_temp: float,
     ) -> float | None:
-        """Fit linearised exponential and extrapolate to target."""
-        t0 = readings[0][0]
-        xs: list[float] = []
-        ys: list[float] = []
+        """Estimate remaining time using Newton's Law of Heating.
 
-        for ts, ti, _ in readings:
-            diff = avg_ambient - ti
-            if diff <= 0.5:
+        The classic linearised fit (ln(T_amb - T_int) vs time) assumes constant
+        ambient, which breaks badly when the user cranks the smoker mid-cook.
+
+        Instead we estimate the heat-transfer coefficient k directly from
+        consecutive reading pairs:
+
+            k  =  (dT_internal / dt)  /  (T_ambient(t) - T_internal(t))
+
+        This is valid even when T_ambient changes over time.  We then project
+        remaining time using the *current* ambient so an immediate oven-temp
+        change is reflected in the very next prediction rather than waiting for
+        the window average to catch up.
+        """
+        k_values: list[float] = []
+        for i in range(1, len(readings)):
+            t0r, ti0, ta0 = readings[i - 1]
+            t1r, ti1, ta1 = readings[i]
+            dt = t1r - t0r
+            if dt < 5:
                 continue
-            xs.append(ts - t0)
-            ys.append(math.log(diff))
+            # Average conditions across the interval
+            avg_gap = ((ta0 - ti0) + (ta1 - ti1)) / 2.0
+            if avg_gap < 1.0:
+                continue
+            k = ((ti1 - ti0) / dt) / avg_gap   # in s⁻¹
+            if 1e-6 < k < 0.1:                 # sanity bounds
+                k_values.append(k)
 
-        if len(xs) < self._min_readings:
+        if len(k_values) < 3:
             return None
 
-        # Least-squares linear regression: y = a + b*x
-        n = len(xs)
-        sum_x = sum(xs)
-        sum_y = sum(ys)
-        sum_xy = sum(x * y for x, y in zip(xs, ys))
-        sum_x2 = sum(x * x for x in xs)
-
-        denom = n * sum_x2 - sum_x * sum_x
-        if abs(denom) < 1e-10:
-            return None
-
-        b = (n * sum_xy - sum_x * sum_y) / denom
-        k = -b  # b should be negative (temp rising), so k > 0
+        # Robust mean: drop values more than 2 std-devs from the median to
+        # reduce the influence of noisy readings (probe contact, lid opening).
+        k_values.sort()
+        mid = len(k_values) // 2
+        k_med = k_values[mid]
+        variance = sum((v - k_med) ** 2 for v in k_values) / len(k_values)
+        k_std = variance ** 0.5
+        filtered = [v for v in k_values if abs(v - k_med) <= 2 * k_std] if k_std > 0 else k_values
+        k = sum(filtered) / len(filtered)
 
         if k <= 0:
             return None
 
-        diff_current = avg_ambient - current_temp
-        diff_target = avg_ambient - self._target_temp
+        # Project using the *current* ambient so a mid-cook temperature change
+        # is immediately reflected — not damped by the window history.
+        current_amb = readings[-1][2]
+        diff_current = current_amb - current_temp
+        diff_target  = current_amb - self._target_temp
 
         if diff_target <= 0 or diff_current <= 0:
             return None

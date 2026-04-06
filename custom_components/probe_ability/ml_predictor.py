@@ -207,9 +207,19 @@ def _build_features(
     # Training definition of in_stall: rate < 0.2°C/min AND in the 60-80°C zone
     in_stall = 1.0 if (abs(rate_recent) < 0.2 and 60 <= T_current <= 80) else 0.0
 
-    # Ambient statistics across the whole cook so far
-    amb_mean = sum(ambien) / len(ambien)
-    amb_std  = (sum((a - amb_mean) ** 2 for a in ambien) / len(ambien)) ** 0.5 if len(ambien) > 1 else 0.0
+    # Ambient statistics.
+    # T_ambient_mean_so_far was trained as the whole-cook mean, but a whole-cook
+    # mean lags badly when the user changes the oven/smoker temperature mid-cook.
+    # We substitute the mean of the most recent 10 readings so the feature
+    # reflects the *current* cooking environment while retaining enough history
+    # to smooth out single-reading noise.  The model was trained with the
+    # whole-cook mean, so this is a pragmatic approximation rather than a true
+    # retraining fix — but since the recent mean converges to the whole-cook
+    # mean during stable cooks, it degrades gracefully.
+    window_amb = ambien[-10:] if len(ambien) >= 10 else ambien
+    amb_mean   = sum(window_amb) / len(window_amb)
+    # Std is computed over the same recent window for consistency.
+    amb_std    = (sum((a - amb_mean) ** 2 for a in window_amb) / len(window_amb)) ** 0.5 if len(window_amb) > 1 else 0.0
 
     cat, ani, ctt, cut, prs = _COOK_NAME_MAP.get(cook_name, _DEFAULT_MEAT)
 

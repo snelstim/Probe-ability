@@ -414,10 +414,16 @@ class CookMonitor:
                 if not self.probe_active[i] or not self.predictors[i].readings:
                     continue
                 pred = self.predictors[i]
-                reached = (
-                    pred.current_temp is not None
-                    and pred.current_temp >= pred.target_temp
+                # Use the peak temperature across all readings rather than
+                # the current reading.  If the probe was physically removed
+                # before stop_cook was called the current reading drops to 0,
+                # which would incorrectly mark the cook as not having reached
+                # target even when it clearly did earlier in the session.
+                peak_temp = max(
+                    (ti for _, ti, _ in pred.readings if ti > 0),
+                    default=0.0,
                 )
+                reached = peak_temp >= pred.target_temp
                 self.hass.async_create_task(
                     self._async_export_csv(
                         probe_index=i,

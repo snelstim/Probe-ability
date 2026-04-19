@@ -204,8 +204,11 @@ def _build_features(
     T_current  = intern[-1]
     amb_recent = sum(ambien[-3:]) / min(len(ambien), 3)
 
-    # Training definition of in_stall: rate < 0.2°C/min AND in the 60-80°C zone
-    in_stall = 1.0 if (abs(rate_recent) < 0.2 and 60 <= T_current <= 80) else 0.0
+    # in_stall: rate < 0.2°C/min AND in the 40-80°C zone.
+    # Originally 60-80°C (matching Meater training data), but real-world cooks
+    # show pronounced stalls at 51-57°C (duck, beef, low-and-slow), so the
+    # lower bound is widened to 40°C to catch those.
+    in_stall = 1.0 if (abs(rate_recent) < 0.2 and 40 <= T_current <= 80) else 0.0
 
     # Ambient statistics.
     # T_ambient_mean_so_far was trained as the whole-cook mean, but a whole-cook

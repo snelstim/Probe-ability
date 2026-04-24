@@ -19,6 +19,7 @@ from .const import (
     CONF_INTERNAL_SENSOR,
     CONF_INTERNAL_SENSOR_2,
     CONF_INTERNAL_SENSOR_3,
+    CONF_SHARE_DATA,
     DOMAIN,
 )
 
@@ -37,6 +38,7 @@ SETUP_SCHEMA = vol.Schema(
             EntitySelectorConfig(domain="sensor", device_class="temperature")
         ),
         vol.Optional(CONF_EXPORT_DATA, default=False): BooleanSelector(),
+        vol.Optional(CONF_SHARE_DATA, default=False): BooleanSelector(),
     }
 )
 

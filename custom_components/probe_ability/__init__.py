@@ -25,6 +25,7 @@ from .const import (
     CONF_INTERNAL_SENSOR,
     CONF_INTERNAL_SENSOR_2,
     CONF_INTERNAL_SENSOR_3,
+    CONF_SHARE_DATA,
     DEFAULT_COOK_NAME,
     DEFAULT_TARGET_TEMP,
     DOMAIN,
@@ -36,6 +37,8 @@ from .const import (
     SERVICE_START_COOK,
     SERVICE_STOP_COOK,
     STORAGE_VERSION,
+    SUPABASE_KEY,
+    SUPABASE_URL,
 )
 from .predictor import CookPredictor
 
@@ -405,9 +408,11 @@ class CookMonitor:
             else [probe_index]
         )
 
-        # Snapshot readings BEFORE resetting predictors so the export task
-        # (scheduled below) still has the data when it actually runs.
-        if self.entry.data.get(CONF_EXPORT_DATA):
+        # Snapshot readings BEFORE resetting predictors so async tasks
+        # (export / share) still have the data when they actually run.
+        want_export = self.entry.data.get(CONF_EXPORT_DATA)
+        want_share = self.entry.data.get(CONF_SHARE_DATA)
+        if want_export or want_share:
             for i in indices:
                 if i >= len(self.predictors):
                     continue
@@ -424,15 +429,27 @@ class CookMonitor:
                     default=0.0,
                 )
                 reached = peak_temp >= pred.target_temp
-                self.hass.async_create_task(
-                    self._async_export_csv(
-                        probe_index=i,
-                        readings=list(pred.readings),   # snapshot
-                        target_temp=pred.target_temp,
-                        reached_target=reached,
-                        cook_name=self.probe_name[i],
+                readings_snapshot = list(pred.readings)  # snapshot once, shared by both tasks
+
+                if want_export:
+                    self.hass.async_create_task(
+                        self._async_export_csv(
+                            probe_index=i,
+                            readings=readings_snapshot,
+                            target_temp=pred.target_temp,
+                            reached_target=reached,
+                            cook_name=self.probe_name[i],
+                        )
                     )
-                )
+
+                if reached and want_share:
+                    self.hass.async_create_task(
+                        self._async_share_cook(
+                            readings=readings_snapshot,
+                            target_temp=pred.target_temp,
+                            cook_name=self.probe_name[i],
+                        )
+                    )
 
         for i in indices:
             if i >= len(self.predictors):
@@ -528,6 +545,73 @@ class CookMonitor:
             "Cook data exported: %s (%d readings, reached_target=%s)",
             filename, len(readings), reached_target,
         )
+
+    async def _async_share_cook(
+        self,
+        readings: list[tuple[float, float, float]],
+        target_temp: float,
+        cook_name: str,
+    ) -> None:
+        """POST anonymised cook data to Supabase (fire-and-forget, silent on failure).
+
+        Only called when the cook reached its target temperature and the user
+        has opted in to anonymous data sharing.  No personal data is sent —
+        no HA URL, no user ID, no device ID.
+        """
+        import statistics
+
+        from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+        if not readings:
+            return
+
+        t0 = readings[0][0]
+        duration_s = int(readings[-1][0] - t0)
+        ambient_values = [r[2] for r in readings]
+        ambient_median = round(statistics.median(ambient_values), 1)
+
+        # Downsample to ≤200 readings to keep the payload small
+        step = max(1, len(readings) // 200)
+        sampled = readings[::step]
+
+        payload = {
+            "cook_name":        cook_name,
+            "target_temp_c":    round(target_temp, 1),
+            "reached_target":   True,   # always True — only called when reached
+            "ambient_median_c": ambient_median,
+            "duration_s":       duration_s,
+            "reading_count":    len(readings),
+            "readings": [
+                [round(r[0] - t0, 1), round(r[1], 2), round(r[2], 2)]
+                for r in sampled
+            ],
+        }
+
+        url = f"{SUPABASE_URL}/rest/v1/cooks"
+        headers = {
+            "apikey":        SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+            "Content-Type":  "application/json",
+            "Prefer":        "return=minimal",
+        }
+
+        try:
+            session = async_get_clientsession(self.hass)
+            async with session.post(
+                url, json=payload, headers=headers, timeout=15
+            ) as resp:
+                if resp.status not in (200, 201):
+                    _LOGGER.debug(
+                        "Probe-ability: cook share returned HTTP %s", resp.status
+                    )
+                else:
+                    _LOGGER.info(
+                        "Probe-ability: shared cook '%s' (%d readings)",
+                        cook_name,
+                        len(readings),
+                    )
+        except Exception:  # noqa: BLE001
+            _LOGGER.debug("Probe-ability: cook share failed (network)", exc_info=True)
 
     def set_target(self, target_temp: float, probe_index: int | None = None) -> None:
         """Update target temperature mid-cook."""

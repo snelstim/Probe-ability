@@ -33,3 +33,10 @@ STORAGE_VERSION = 1
 # Data export (fine-tuning / analysis)
 CONF_EXPORT_DATA = "export_cook_data"
 EXPORT_SUBDIR = "probe_ability_exports"
+
+# Anonymous cook sharing (opt-in)
+CONF_SHARE_DATA = "share_cook_data"
+
+# Supabase — anon key is intentionally public (INSERT-only via RLS)
+SUPABASE_URL = "https://hlsfrqvfhtauoyhugyou.supabase.co"
+SUPABASE_KEY = "sb_publishable_UaNANuzjnNgEP7wGaBARNg_lUbBrMjK"

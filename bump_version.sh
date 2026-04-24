@@ -7,6 +7,9 @@
 # Minor bump (new feature):      ./bump_version.sh 0.6.0
 set -euo pipefail
 
+# Always run relative to the project root, regardless of where the script is called from
+cd "$(dirname "$0")"
+
 VERSION="${1:?Usage: ./bump_version.sh <version>  e.g. 0.5.1}"
 
 if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then

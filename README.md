@@ -8,7 +8,7 @@ A Home Assistant custom integration that predicts when your meat will reach a ta
 
 Probe-ability uses a two-layer prediction system:
 
-**1. ML model (primary)** — A Gradient Boosted Regressor trained on 178 real cooks from a Meater device. It predicts time remaining from 17 features: current and starting temperatures, heating rate, deceleration, elapsed time, ambient temperature statistics, stall detection, and meat type. It achieves ~3 minute mean absolute error across all meat types and is accurate from the moment collecting ends. The model is stored in `model.pkl` inside the component folder and requires `scikit-learn` (installed automatically by Home Assistant on first run).
+**1. ML model (primary)** — A Gradient Boosted Regressor trained on 140 real cooks (133 from a Meater device, 7 from Probe-ability exports) across beef, pork, poultry, lamb, and fish. It predicts time remaining from 17 features: current and starting temperatures, heating rate, deceleration, elapsed time, ambient temperature statistics, stall detection, and meat type. It achieves ~4 min cross-validated mean absolute error across all meat types and is accurate from the moment collecting ends. The model is stored in `model.pkl` inside the component folder and requires `scikit-learn` (installed automatically by Home Assistant on first run).
 
 **2. Physics model (fallback)** — Newton's Law of Heating: fits an exponential curve to recent readings and solves for the time at which the meat will reach target temperature. Used automatically if the ML model is unavailable (model file missing, scikit-learn not yet installed, or prediction error).
 
@@ -57,7 +57,8 @@ The config flow is a one-time hardware setup. It does **not** ask for target tem
 | **Ambient sensor** | Yes | Ambient (oven/smoker/air) temperature sensor |
 | **Probe 2 sensor** | No | Second internal probe (optional) |
 | **Probe 3 sensor** | No | Third internal probe (optional) |
-| **Export cook data** | No | Save a CSV after every cook for analysis/fine-tuning |
+| **Export cook data** | No | Save a CSV after every cook for local analysis/fine-tuning |
+| **Share anonymous cook data** | No | Opt-in: send completed cooks to improve the shared ML model (see [Anonymous data sharing](#anonymous-data-sharing)) |
 
 > **Tip:** All sensor entities must have the `temperature` device class. The entity selector in the config flow filters for this automatically.
 
@@ -112,7 +113,7 @@ The card starts in idle mode. Before pressing Start, choose your cook setup:
 - **Combined mode** — all probes monitor the same piece of meat (e.g. a brisket with probes in different spots). One target temperature, one shared timer showing when the *slowest* probe reaches target.
 - **Individual mode** — each probe is independent (e.g. 3 steaks at different doneness levels). Each probe gets its own target temperature and countdown timer.
 
-Pick a **preset** from the dropdown (e.g. *Beef Medium Rare — 54°C*) or type a custom target temperature, then press **Start Cook** (combined) or **Start Probe N** (individual).
+Pick a **preset** from the dropdown (e.g. *Beef Sirloin Medium Rare — 54°C*) or type a custom target temperature, then press **Start Cook** (combined) or **Start Probe N** (individual).
 
 ### Collecting data
 
@@ -221,7 +222,14 @@ Start a new cook. If a sensor is unavailable when this is called, a red error no
 
 **Individual mode** — set `probe_mode: "individual"` and `probe_index` to start one specific probe.
 
-> **Tip:** Use a preset name that matches one of the card's built-in presets (e.g. `"Beef (Medium Rare)"`, `"Brisket"`, `"Pulled Pork"`) to give the ML model the most accurate meat type context. Custom names fall back to a generic beef profile.
+> **Tip:** Use a preset name matching one of the card's built-in presets as `cook_name` to give the ML model the most accurate meat type context. The format is `"Category Cut Doneness"` — for example:
+> - `"Beef Sirloin Medium Rare"`, `"Beef Rib Eye Medium"`, `"Beef Brisket Fall Apart"`
+> - `"Pork Shoulder Pulled"`, `"Pork Loin / Chop Well Done"`
+> - `"Poultry Chicken Breast Medium"`, `"Poultry Duck Breast Medium"`
+> - `"Lamb Leg Medium Rare"`, `"Lamb Rack / Ribs Rare"`
+> - `"Other Fish / Salmon Medium Rare"`
+>
+> Custom names fall back to a generic beef profile.
 
 ### `probe_ability.stop_cook`
 
@@ -350,7 +358,7 @@ script:
       - service: probe_ability.start_cook
         data:
           target_temp: 96
-          cook_name: "Brisket"
+          cook_name: "Beef Brisket Fall Apart"
           probe_mode: combined
 ```
 
@@ -366,13 +374,14 @@ Lines starting with `#` are metadata headers and can be skipped by most tools.
 
 ```
 # probe_ability_export_version: 3
+# integration_version: 0.6.1
 # probe_index: 0
 # probe_mode: combined
-# cook_name: Brisket
+# cook_name: Beef Brisket Fall Apart
 # target_temp_c: 96.0
 # reached_target: true
 # total_readings: 147
-# export_timestamp: 2026-04-03T18:30:00.000000
+# export_timestamp: 2026-04-25T18:30:00.000000
 elapsed_s,internal_temp_c,ambient_temp_c,predicted_remaining_s,confidence
 0.0,22.50,120.00,,
 32.1,22.75,121.00,,
@@ -382,12 +391,35 @@ elapsed_s,internal_temp_c,ambient_temp_c,predicted_remaining_s,confidence
 
 `predicted_remaining_s` and `confidence` are empty during the initial collecting phase and populated from the moment predictions begin. They are generated by replaying the cook through a fresh predictor instance at export time, reproducing exactly what was shown live.
 
+`integration_version` records which version of Probe-ability generated the file, useful for filtering data across versions when retraining the model.
+
 Read in Python:
 
 ```python
 import pandas as pd
-df = pd.read_csv("cook_20260403_183000_probe1.csv", comment="#")
+df = pd.read_csv("cook_20260425_183000_probe1.csv", comment="#")
 ```
+
+---
+
+## Anonymous data sharing
+
+Enable **Share anonymous cook data** in the config flow to automatically send completed cooks to a shared dataset used to retrain the ML model. This is entirely opt-in and off by default.
+
+**What is sent:**
+- Cook name, target temperature, duration
+- Internal and ambient temperature readings (downsampled to ≤200 points)
+- Median ambient temperature
+- Integration version
+
+**What is never sent:**
+- Your Home Assistant URL
+- Any device or user identifiers
+- Incomplete cooks (only cooks where the probe reached the target temperature are shared)
+
+Data is sent via an INSERT-only REST API secured with Row Level Security — anonymous clients can insert rows but cannot read, modify, or delete any data.
+
+You can have export enabled without sharing, sharing enabled without export, both, or neither — they are independent settings.
 
 ---
 
@@ -408,7 +440,7 @@ df = pd.read_csv("cook_20260403_183000_probe1.csv", comment="#")
 
 **Primary — ML (Gradient Boosted Regressor):**
 
-Trained on 178 cooks across beef, pork, poultry, lamb, and fish. Predicts minutes remaining from 17 features:
+Trained on 140 cooks (133 Meater exports + 7 Probe-ability exports) across beef, pork, poultry, lamb, and fish. Target temperatures are derived from the cook's preset (e.g. medium rare beef → 54°C) rather than the peak temperature reached, ensuring training and inference are in the same distribution. Predicts minutes remaining from 17 features:
 
 | Feature group | Features |
 |---|---|
@@ -418,7 +450,7 @@ Trained on 178 cooks across beef, pork, poultry, lamb, and fish. Predicts minute
 | State | Stall flag (rate < 0.2°C/min in 60–80°C zone) |
 | Meat type | Category, animal, cut type, cut, doneness preset |
 
-Achieves ~3 min mean absolute error overall; accurate from the end of the collecting phase. Meat type context is taken from the `cook_name` parameter — use one of the card's built-in preset names for best accuracy.
+Cross-validated MAE: ~4 min overall; accurate from the end of the collecting phase. Meat type context is taken from the `cook_name` parameter — use one of the card's built-in preset names for best accuracy.
 
 **Fallback — Physics (Newton's Law of Heating):**
 
@@ -430,7 +462,15 @@ In combined mode the displayed ETA is `max(time_remaining)` across all active no
 
 ### ML model file
 
-`model.pkl` lives inside `custom_components/probe_ability/` and is not tracked by git. If you re-clone the repository, copy it back from your Meater analysis output or re-run the training script.
+`model.pkl` lives inside `custom_components/probe_ability/` and is not tracked by git. If you re-clone the repository, copy it back from your training output or re-run `retrain.py`.
+
+### Retraining the model
+
+```bash
+python3 retrain.py
+```
+
+Place Meater export files in `meater_exports/` and/or Probe-ability CSV exports in `probe_ability_exports/` before running. The script outputs a new `ml_model_code.py` (embedded model for HA, no `model.pkl` needed at runtime) and `retrain_output/model.pkl`. Copy `ml_model_code.py` to the component folder and restart HA.
 
 ---
 

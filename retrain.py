@@ -585,9 +585,8 @@ def compile_model(model, out_path: str) -> None:
     lines.append(")")
     lines.append("")
     lines.append("_DATA = base64.b64decode(")
-    lines.append('  "')
-    lines.append('  "\n  "'.join(chunks))
-    lines.append('"')
+    for chunk in chunks:
+        lines.append(f'  "{chunk}"')
     lines.append(")")
     lines.append("")
     lines.append("def score(x):")

@@ -105,52 +105,60 @@ def _encode(cut: str, doneness: str) -> tuple[int, int, int, int, int]:
 
 
 # ---------------------------------------------------------------------------
-# Cook-name map — built dynamically from cook_presets.json so adding a new
-# preset only requires editing that one JSON file.
+# Cook-name map — all presets from cook_presets.json expressed inline so that
+# no file I/O is needed at import time (avoids the HA blocking-call warning).
+# Derived from: Category.label + Cut.label + Doneness.label → _encode(cut_id, don_id)
+# Update this dict when cook_presets.json gains new cuts.
 # ---------------------------------------------------------------------------
 
-def _build_cook_name_map() -> dict[str, tuple[int, int, int, int, int]]:
-    """Load www/probe-ability/cook_presets.json and build the name → encoding map.
-
-    The JSON is located two levels above the component directory:
-        config/custom_components/probe_ability/  ← __file__
-        config/custom_components/
-        config/
-        config/www/probe-ability/cook_presets.json
-
-    Falls back to a minimal hardcoded set if the file is missing.
-    """
-    import json
-    from pathlib import Path
-    try:
-        json_path = Path(__file__).parent.parent.parent / "www" / "probe-ability" / "cook_presets.json"
-        data = json.loads(json_path.read_text())
-        result: dict[str, tuple[int, int, int, int, int]] = {}
-        for cat in data["categories"]:
-            for cut in cat["cuts"]:
-                for don in cut["doneness"]:
-                    name = f"{cat['label']} {cut['label']} {don['label']}"
-                    result[name] = _encode(cut["id"], don["id"])
-        _LOGGER.debug("Probe-ability: loaded %d presets from cook_presets.json", len(result))
-        return result
-    except Exception as exc:  # noqa: BLE001
-        _LOGGER.warning(
-            "Probe-ability: could not load cook_presets.json (%s) — using built-in defaults", exc
-        )
-        return {
-            "Beef Sirloin Medium Rare":        _encode("sirloin",  "medium_rare"),
-            "Beef Sirloin Medium":             _encode("sirloin",  "medium"),
-            "Beef Sirloin Well Done":          _encode("sirloin",  "well_done"),
-            "Pork Loin / Chop Medium":         _encode("loin",     "medium"),
-            "Poultry Chicken Breast Medium":   _encode("breast",   "medium"),
-            "Lamb Leg Medium Rare":            _encode("leg_lamb", "medium_rare"),
-            "Lamb Leg Medium":                 _encode("leg_lamb", "medium"),
-            "Beef Brisket Fall Apart":         _encode("brisket",  "fall_apart"),
-            "Pork Shoulder Pulled":            _encode("shoulder", "pulled"),
-        }
-
-
-_COOK_NAME_MAP: dict[str, tuple[int, int, int, int, int]] = _build_cook_name_map()
+_COOK_NAME_MAP: dict[str, tuple[int, int, int, int, int]] = {
+    # Beef — Sirloin
+    "Beef Sirloin Rare":               _encode("sirloin",    "rare"),
+    "Beef Sirloin Medium Rare":        _encode("sirloin",    "medium_rare"),
+    "Beef Sirloin Medium":             _encode("sirloin",    "medium"),
+    "Beef Sirloin Medium Well":        _encode("sirloin",    "medium_well"),
+    "Beef Sirloin Well Done":          _encode("sirloin",    "well_done"),
+    # Beef — Rib Eye
+    "Beef Rib Eye Rare":               _encode("rib_eye",    "rare"),
+    "Beef Rib Eye Medium Rare":        _encode("rib_eye",    "medium_rare"),
+    "Beef Rib Eye Medium":             _encode("rib_eye",    "medium"),
+    "Beef Rib Eye Medium Well":        _encode("rib_eye",    "medium_well"),
+    "Beef Rib Eye Well Done":          _encode("rib_eye",    "well_done"),
+    # Beef — Brisket
+    "Beef Brisket Fall Apart":         _encode("brisket",    "fall_apart"),
+    # Beef — Burger
+    "Beef Burger Medium":              _encode("burger",     "medium"),
+    "Beef Burger Well Done":           _encode("burger",     "well_done"),
+    # Beef — Roast
+    "Beef Roast Medium Rare":          _encode("roast",      "medium_rare"),
+    "Beef Roast Medium":               _encode("roast",      "medium"),
+    "Beef Roast Well Done":            _encode("roast",      "well_done"),
+    # Pork
+    "Pork Loin / Chop Medium":         _encode("loin",       "medium"),
+    "Pork Loin / Chop Well Done":      _encode("loin",       "well_done"),
+    "Pork Shoulder Pulled":            _encode("shoulder",   "pulled"),
+    "Pork Belly Well Done":            _encode("belly",      "well_done"),
+    "Pork Ribs Fall Apart":            _encode("rib_pork",   "fall_apart"),
+    # Poultry
+    "Poultry Chicken Breast Medium":   _encode("breast",       "medium"),
+    "Poultry Duck Breast Medium":      _encode("duck_breast",  "medium"),
+    "Poultry Thigh / Leg Well Done":   _encode("thigh",        "well_done"),
+    "Poultry Whole Bird Well Done":    _encode("whole",        "well_done"),
+    # Lamb
+    "Lamb Leg Rare":                   _encode("leg_lamb",   "rare"),
+    "Lamb Leg Medium Rare":            _encode("leg_lamb",   "medium_rare"),
+    "Lamb Leg Medium":                 _encode("leg_lamb",   "medium"),
+    "Lamb Leg Well Done":              _encode("leg_lamb",   "well_done"),
+    "Lamb Rack / Ribs Rare":           _encode("rib_rack",   "rare"),
+    "Lamb Rack / Ribs Medium Rare":    _encode("rib_rack",   "medium_rare"),
+    "Lamb Rack / Ribs Medium":         _encode("rib_rack",   "medium"),
+    "Lamb Shoulder Fall Apart":        _encode("shoulder",   "fall_apart"),
+    # Other
+    "Other Fish / Salmon Medium Rare": _encode("fillet",     "medium_rare"),
+    "Other Fish / Salmon Medium":      _encode("fillet",     "medium"),
+    "Other Other Medium":              _encode("other",      "medium"),
+    "Other Other Well Done":           _encode("other",      "well_done"),
+}
 
 # Fallback encoding for "Custom" or any unrecognised cook name.
 _DEFAULT_MEAT: tuple[int, int, int, int, int] = _encode("steak", "medium")

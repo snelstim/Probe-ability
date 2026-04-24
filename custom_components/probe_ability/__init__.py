@@ -522,6 +522,7 @@ class CookMonitor:
             os.makedirs(export_dir, exist_ok=True)
             with open(filepath, "w", newline="", encoding="utf-8") as fh:
                 fh.write("# probe_ability_export_version: 3\n")
+                fh.write(f"# integration_version: {__version__}\n")
                 fh.write(f"# probe_index: {probe_index}\n")
                 fh.write(f"# probe_mode: {probe_mode}\n")
                 fh.write(f"# cook_name: {cook_name}\n")
@@ -575,12 +576,13 @@ class CookMonitor:
         sampled = readings[::step]
 
         payload = {
-            "cook_name":        cook_name,
-            "target_temp_c":    round(target_temp, 1),
-            "reached_target":   True,   # always True — only called when reached
-            "ambient_median_c": ambient_median,
-            "duration_s":       duration_s,
-            "reading_count":    len(readings),
+            "cook_name":          cook_name,
+            "target_temp_c":      round(target_temp, 1),
+            "reached_target":     True,   # always True — only called when reached
+            "ambient_median_c":   ambient_median,
+            "duration_s":         duration_s,
+            "reading_count":      len(readings),
+            "integration_version": __version__,
             "readings": [
                 [round(r[0] - t0, 1), round(r[1], 2), round(r[2], 2)]
                 for r in sampled

@@ -63,3 +63,28 @@ class CookPredictorConfigFlow(ConfigFlow, domain=DOMAIN):
             )
 
         return self.async_show_form(step_id="user", data_schema=SETUP_SCHEMA)
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle reconfiguration of an existing entry.
+
+        Shown when the user clicks '⋮ → Reconfigure' on the integration card
+        in Settings → Devices & Services.  Lets the user change sensors or
+        toggle the export / share options without removing and re-adding the
+        integration.
+        """
+        entry = self._get_reconfigure_entry()
+
+        if user_input is not None:
+            return self.async_update_reload_and_abort(
+                entry,
+                data_updates=user_input,
+            )
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=self.add_suggested_values_to_schema(
+                SETUP_SCHEMA, entry.data
+            ),
+        )

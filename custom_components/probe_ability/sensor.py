@@ -41,22 +41,42 @@ _PROBE_SUFFIX = {0: "", 1: "_2", 2: "_3"}
 _PROBE_LABEL = {0: "", 1: " (probe 2)", 2: " (probe 3)"}
 
 # Carryover cooking constants
-_CARRYOVER_FACTOR = 5.0   # °C of carryover per °C/min of heating rate
-_MIN_CARRYOVER = 3.0      # °C — minimum assumed carryover
-_MAX_CARRYOVER = 10.0     # °C — maximum assumed carryover
+# Carryover is driven by how much heat the cooking environment holds relative
+# to the target temperature — not the heating rate.  High-ambient (hot grill,
+# 280°C) transfers much more residual heat than a low-and-slow smoker (105°C).
+# Formula: clamp((ambient − target) × 0.06, min=2°C, max=8°C)
+# Examples:
+#   106°C smoker, 54°C target  → (106-54)×0.06 = 3.1°C  (pull at ~51°C)
+#   180°C oven,   74°C target  → (180-74)×0.06 = 6.4°C  (pull at ~68°C)
+#   280°C grill,  60°C target  → clamped to 8°C          (pull at ~52°C)
+_CARRYOVER_AMBIENT_FACTOR = 0.06
+_MIN_CARRYOVER = 2.0   # °C
+_MAX_CARRYOVER = 8.0   # °C
 
 
-def _pull_temp(target_temp: float, rate_per_minute: float | None) -> float | None:
+def _pull_temp(
+    target_temp: float,
+    rate_per_minute: float | None,
+    ambient_temp: float | None = None,
+) -> float | None:
     """Return the temperature at which meat should be pulled from heat.
 
-    Based on the current heating rate, we estimate how much the internal
-    temperature will continue to rise (carryover cooking) after the heat
-    source is removed.  Pull the meat when it reaches target minus that
-    estimated carryover so it coasts up to the intended serving temperature.
+    Estimates carryover rise from the ambient cooking temperature: the hotter
+    the cooking environment, the more residual heat transfers into the meat
+    after it is removed.  Pull the meat at target minus that estimated
+    carryover so it coasts up to the intended serving temperature.
+
+    Falls back to a rate-based estimate (2 × rate) when ambient is unavailable,
+    which is less accurate but still avoids the previous over-estimate.
     """
     if rate_per_minute is None or rate_per_minute <= 0:
         return None
-    carryover = min(max(rate_per_minute * _CARRYOVER_FACTOR, _MIN_CARRYOVER), _MAX_CARRYOVER)
+    if ambient_temp is not None and ambient_temp > target_temp:
+        carryover = (ambient_temp - target_temp) * _CARRYOVER_AMBIENT_FACTOR
+    else:
+        # Fallback: use rate as a rough proxy (conservative multiplier)
+        carryover = rate_per_minute * 2.0
+    carryover = min(max(carryover, _MIN_CARRYOVER), _MAX_CARRYOVER)
     return round(target_temp - carryover, 1)
 
 
@@ -226,7 +246,11 @@ class CookTimeRemainingSensor(CookPredictorSensorBase):
                 attrs["ambient_temp"] = round(predictor.current_ambient, 1)
 
             # Pull-from-heat temperature
-            pull = _pull_temp(predictor.target_temp, result.rate_per_minute)
+            pull = _pull_temp(
+                predictor.target_temp,
+                result.rate_per_minute,
+                predictor.current_ambient,
+            )
             if pull is not None:
                 attrs["pull_temp"] = pull
 
@@ -255,7 +279,11 @@ class CookTimeRemainingSensor(CookPredictorSensorBase):
                         attrs[f"probe_{n}_time_remaining"] = round(
                             extra_result.time_remaining_seconds / 60, 1
                         )
-                    extra_pull = _pull_temp(extra_pred.target_temp, extra_result.rate_per_minute)
+                    extra_pull = _pull_temp(
+                        extra_pred.target_temp,
+                        extra_result.rate_per_minute,
+                        extra_pred.current_ambient,
+                    )
                     if extra_pull is not None:
                         attrs[f"probe_{n}_pull_temp"] = extra_pull
 

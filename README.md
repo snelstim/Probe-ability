@@ -431,7 +431,7 @@ You can have export enabled without sharing, sharing enabled without export, bot
 | Reading debounce interval | 30 seconds |
 | Curve fitting window (physics fallback) | 40-minute sliding window |
 | EMA smoothing factor (α) | 0.15 — half-life ≈ 4–5 readings (~2 min) |
-| Carryover cooking model | `clamp(rate × 5, min=3°C, max=10°C)` |
+| Carryover cooking model | `clamp((ambient − target) × 0.06, min=2°C, max=8°C)` — ambient-aware |
 | Stale probe exclusion (combined ETA) | Probe excluded after 5 minutes without a new reading |
 | State persistence | Survives HA restarts — cook state written to `.storage` |
 | External dependencies | `scikit-learn>=1.3.0` (ML model) |

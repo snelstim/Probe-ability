@@ -442,12 +442,20 @@ class CookMonitor:
                         )
                     )
 
-                if reached and want_share:
+                # Share if probe reached target OR got within the carryover
+                # margin of it (≤12°C below).  Wired probes are typically
+                # removed from the meat when it comes off the heat, so the
+                # probe reading never crosses the target even though the cook
+                # completed correctly via carryover.  12°C covers the maximum
+                # carryover estimate (8°C) with 4°C headroom.
+                close_to_target = peak_temp >= pred.target_temp - 12 and peak_temp > 0
+                if close_to_target and want_share:
                     self.hass.async_create_task(
                         self._async_share_cook(
                             readings=readings_snapshot,
                             target_temp=pred.target_temp,
                             cook_name=self.probe_name[i],
+                            reached_target=reached,
                         )
                     )
 
@@ -552,12 +560,14 @@ class CookMonitor:
         readings: list[tuple[float, float, float]],
         target_temp: float,
         cook_name: str,
+        reached_target: bool = True,
     ) -> None:
         """POST anonymised cook data to Supabase (fire-and-forget, silent on failure).
 
-        Only called when the cook reached its target temperature and the user
-        has opted in to anonymous data sharing.  No personal data is sent —
-        no HA URL, no user ID, no device ID.
+        Called when the probe reached the target temperature OR got within the
+        carryover margin of it (wired probes are typically removed before the
+        meat fully crosses the target).  No personal data is sent — no HA URL,
+        no user ID, no device ID.
         """
         import statistics
 
@@ -585,7 +595,7 @@ class CookMonitor:
         payload = {
             "cook_name":          cook_name,
             "target_temp_c":      round(target_temp, 1),
-            "reached_target":     True,   # always True — only called when reached
+            "reached_target":     reached_target,
             "ambient_median_c":   ambient_median,
             "duration_s":         duration_s,
             "reading_count":      len(readings),

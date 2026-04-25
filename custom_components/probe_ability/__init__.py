@@ -561,10 +561,17 @@ class CookMonitor:
         """
         import statistics
 
+        import aiohttp
         from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
         if not readings:
             return
+
+        _LOGGER.info(
+            "Probe-ability: uploading cook '%s' (%d readings) to shared dataset",
+            cook_name,
+            len(readings),
+        )
 
         t0 = readings[0][0]
         duration_s = int(readings[-1][0] - t0)
@@ -599,21 +606,27 @@ class CookMonitor:
 
         try:
             session = async_get_clientsession(self.hass)
+            timeout = aiohttp.ClientTimeout(total=15)
             async with session.post(
-                url, json=payload, headers=headers, timeout=15
+                url, json=payload, headers=headers, timeout=timeout
             ) as resp:
                 if resp.status not in (200, 201):
-                    _LOGGER.debug(
-                        "Probe-ability: cook share returned HTTP %s", resp.status
+                    body = await resp.text()
+                    _LOGGER.warning(
+                        "Probe-ability: cook share returned HTTP %s: %s",
+                        resp.status,
+                        body[:200],
                     )
                 else:
                     _LOGGER.info(
-                        "Probe-ability: shared cook '%s' (%d readings)",
+                        "Probe-ability: shared cook '%s' (%d readings) — OK",
                         cook_name,
                         len(readings),
                     )
         except Exception:  # noqa: BLE001
-            _LOGGER.debug("Probe-ability: cook share failed (network)", exc_info=True)
+            _LOGGER.warning(
+                "Probe-ability: cook share failed", exc_info=True
+            )
 
     def set_target(self, target_temp: float, probe_index: int | None = None) -> None:
         """Update target temperature mid-cook."""

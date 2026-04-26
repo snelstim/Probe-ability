@@ -1,4 +1,5 @@
 {
   "name": "Probe-ability",
-  "render_readme": true
+  "render_readme": true,
+  "icon": "custom_components/probe_ability/icon.png"
 }

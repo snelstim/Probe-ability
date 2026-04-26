@@ -1,3 +1,4 @@
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 # Probe-ability
 
 A Home Assistant custom integration that predicts when your meat will reach a target internal temperature — like a Meater or other predictive thermometer, but using any temperature sensors you already have.

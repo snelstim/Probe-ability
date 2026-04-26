@@ -1,9 +1,10 @@
 Retrain report
 ========================================
-Total samples:  1112
-Total cooks:    131
+Total samples:  1184
+Total cooks:    141
   meater: 1049 samples
-  probe_ability: 63 samples
+  probe_ability: 99 samples
+  supabase: 36 samples
 
-CV MAE:         4.12 min
-Train MAE:      0.52 min
+CV MAE:         5.63 min
+Train MAE:      0.69 min

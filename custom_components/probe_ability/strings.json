@@ -3,15 +3,32 @@
     "step": {
       "user": {
         "title": "Set up Probe-ability",
-        "description": "Select the internal and ambient temperature sensor entities to use for cook predictions.",
+        "description": "Select the temperature sensors to use for cook predictions.",
         "data": {
-          "internal_sensor": "Internal (meat) temperature sensor",
-          "ambient_sensor": "Ambient (oven/smoker) temperature sensor"
+          "internal_sensor": "Internal (meat) temperature — probe 1",
+          "ambient_sensor": "Ambient (oven/smoker) temperature",
+          "internal_sensor_2": "Internal temperature — probe 2 (optional)",
+          "internal_sensor_3": "Internal temperature — probe 3 (optional)",
+          "export_cook_data": "Export cook data locally (for retraining)",
+          "share_cook_data": "Share anonymised cook data to improve the model"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure Probe-ability",
+        "description": "Update the sensors or data-sharing options for this instance.",
+        "data": {
+          "internal_sensor": "Internal (meat) temperature — probe 1",
+          "ambient_sensor": "Ambient (oven/smoker) temperature",
+          "internal_sensor_2": "Internal temperature — probe 2 (optional)",
+          "internal_sensor_3": "Internal temperature — probe 3 (optional)",
+          "export_cook_data": "Export cook data locally (for retraining)",
+          "share_cook_data": "Share anonymised cook data to improve the model"
         }
       }
     },
     "abort": {
-      "already_configured": "This internal sensor is already configured."
+      "already_configured": "This internal sensor is already configured.",
+      "reconfigure_successful": "Configuration updated successfully."
     }
   }
 }

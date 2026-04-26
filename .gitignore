@@ -1,7 +1,28 @@
-.sfdx/
-.DS_Store
-__pycache__/
-*.pyc
-todo.txt
+# Personal cook data
 meater_exports/
-custom_components/probe_ability/model.pkl
+probe_ability_exports/
+
+# Generated outputs
+retrain_output/
+
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pkl
+
+# macOS
+.DS_Store
+.AppleDouble
+.sfdx/
+
+# IDE
+.vscode/
+.idea/
+
+# Tooling
+skills-lock.json
+todo.txt

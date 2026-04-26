@@ -3,31 +3,39 @@
 
 Usage
 -----
-    python retrain.py [--pa-exports PATH] [--output-dir PATH]
+    python retrain.py [--pa-exports PATH] [--output-dir PATH] [--supabase-key KEY]
 
-    --pa-exports PATH   probe_ability CSV exports directory
-                        (default: ./probe_ability_exports)
-    --output-dir PATH   where to write artefacts
-                        (default: ./retrain_output)
+    --pa-exports PATH    probe_ability CSV exports directory
+                         (default: ./probe_ability_exports)
+    --output-dir PATH    where to write artefacts
+                         (default: ./retrain_output)
+    --supabase-key KEY   Supabase service role key to pull shared cooks
+                         (or set SUPABASE_SERVICE_KEY env var)
 
 What it does
 ------------
 1. Loads original Meater exports from   meater_exports/
 2. Loads probe_ability exports from     probe_ability_exports/  (or --pa-exports)
-3. Re-engineers features with corrected definitions that now match inference:
+3. Loads anonymously shared cooks from  Supabase  (if SUPABASE_SERVICE_KEY is set)
+4. Re-engineers features with corrected definitions that now match inference:
      in_stall            : 40–80 °C  (was 60–80 °C)
      T_ambient_mean_so_far: last 10 readings  (was whole-cook mean)
-4. Trains a GradientBoostingRegressor with GroupKFold cross-validation
-5. Compiles the model to   custom_components/probe_ability/ml_model_code.py
-6. Writes a short accuracy report to   retrain_output/retrain_report.txt
+5. Trains a GradientBoostingRegressor with GroupKFold cross-validation
+6. Compiles the model to   custom_components/probe_ability/ml_model_code.py
+7. Writes a short accuracy report to   retrain_output/retrain_report.txt
 
 Copying probe_ability exports from Home Assistant
 -------------------------------------------------
     scp homeassistant:/config/probe_ability_exports/*.csv ./probe_ability_exports/
 
+Using shared Supabase data
+--------------------------
+    export SUPABASE_SERVICE_KEY="eyJ..."   # service_role key from Supabase dashboard
+    python retrain.py
+
 Requirements
 ------------
-    pip install scikit-learn numpy
+    pip install scikit-learn numpy requests
 """
 
 from __future__ import annotations
@@ -528,6 +536,107 @@ def load_pa_exports(data_dir: str, presets: dict | None) -> list[dict]:
     return cooks
 
 
+def load_supabase_exports(
+    url: str,
+    service_key: str,
+    presets: dict | None = None,
+) -> list[dict]:
+    """Load shared cooks from the Supabase REST API.
+
+    Requires the project service role key (bypasses Row Level Security).
+    Pass the key via --supabase-key or set SUPABASE_SERVICE_KEY env var.
+
+    Only cooks where the peak internal temp is within 12°C of the target
+    are included — matching the threshold used by the HA sharing logic
+    (covers carryover cooks where a wired probe is pulled before target).
+    """
+    try:
+        import requests as _requests
+    except ImportError:
+        print("  [supabase] 'requests' not installed — skipping (pip install requests)")
+        return []
+
+    endpoint = f"{url}/rest/v1/cooks"
+    headers = {
+        "apikey":        service_key,
+        "Authorization": f"Bearer {service_key}",
+    }
+    params = {
+        "select":    "*",
+        "cook_name": "not.like.Test *",   # exclude smoke-test rows
+        "order":     "created_at",
+    }
+
+    try:
+        resp = _requests.get(endpoint, headers=headers, params=params, timeout=30)
+        resp.raise_for_status()
+        rows = resp.json()
+    except Exception as exc:
+        print(f"  [supabase] fetch failed: {exc}")
+        return []
+
+    loaded, skipped = 0, 0
+    cooks: list[dict] = []
+
+    for row in rows:
+        cook_name    = row.get("cook_name") or ""
+        target_temp  = float(row.get("target_temp_c") or 0)
+        readings_raw = row.get("readings") or []
+
+        if not readings_raw or target_temp <= 0:
+            skipped += 1
+            continue
+
+        # readings = [[elapsed_s, internal_c, ambient_c], ...]
+        try:
+            triples = [(float(r[0]), float(r[1]), float(r[2])) for r in readings_raw]
+        except (TypeError, IndexError, ValueError):
+            skipped += 1
+            continue
+
+        # Filter out zero / invalid probe readings
+        valid = [(e, i, a) for e, i, a in triples if i > 0]
+        if len(valid) < 5:
+            skipped += 1
+            continue
+
+        elapsed_s = [v[0] for v in valid]
+        internal  = [v[1] for v in valid]
+        ambient   = [v[2] for v in valid]
+
+        # Skip if the probe never got close to target (bad / abandoned cook)
+        peak_temp = max(internal)
+        if peak_temp < target_temp - 12:
+            skipped += 1
+            continue
+
+        # endpoint = first reading >= target, else last reading (carryover)
+        endpoint_idx = next(
+            (i for i, t in enumerate(internal) if t >= target_temp),
+            len(internal) - 1,
+        )
+        if endpoint_idx < 5:
+            skipped += 1
+            continue
+
+        meat = cook_name_to_meat(cook_name, presets)
+
+        cooks.append({
+            "cook_id":      f"supabase_{row['id']}",
+            "elapsed_s":    elapsed_s[:endpoint_idx + 1],
+            "internal":     internal[:endpoint_idx + 1],
+            "ambient":      ambient[:endpoint_idx + 1],
+            "endpoint_idx": endpoint_idx,
+            "target_temp":  target_temp,
+            "meat":         meat,
+            "source":       "supabase",
+        })
+        loaded += 1
+
+    print(f"  Supabase exports:      loaded {loaded}, skipped {skipped}")
+    return cooks
+
+
 # ── Model compilation ─────────────────────────────────────────────────────────
 
 _NODE_FMT  = ">hfhhf"   # feat(h), thresh(f), left(h), right(h), val(f)
@@ -683,7 +792,233 @@ def train(all_rows: list[dict], output_dir: str) -> object:
         fh.write(f"Train MAE:      {train_mae:.2f} min\n")
     print(f"  Report written to {report_path}")
 
-    return model
+    return model, cv_mae
+
+
+# ── Analysis plots ────────────────────────────────────────────────────────────
+
+def generate_plots(
+    model,
+    all_rows: list[dict],
+    all_cooks: list[dict],
+    output_dir: str,
+    cv_mae: float,
+) -> None:
+    """Save three diagnostic PNG files to output_dir after a training run."""
+    try:
+        import numpy as np
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError as _e:
+        print(f"  Skipping plots — missing dependency: {_e}  (pip install matplotlib numpy)")
+        return
+
+    from sklearn.metrics import mean_absolute_error as _mae
+
+    PALETTE = {
+        "meater":        "#2196F3",
+        "probe_ability": "#FF9800",
+        "supabase":      "#4CAF50",
+    }
+    DEFAULT_C = "#9E9E9E"
+
+    def src_color(src: str) -> str:
+        return PALETTE.get(src, DEFAULT_C)
+
+    # ── shared arrays ─────────────────────────────────────────────────────────
+    X         = np.array([[row[f] for f in _FEATURE_ORDER] for row in all_rows])
+    y_actual  = np.array([row["remaining_min"] for row in all_rows])
+    y_pred    = model.predict(X)
+    residuals = y_pred - y_actual
+
+    sources   = [row.get("source", "?") for row in all_rows]
+    T_amb     = np.array([row["T_ambient_current"] for row in all_rows])
+    el_min    = np.array([row["elapsed_min"]       for row in all_rows])
+    fracs     = el_min / np.where(el_min + y_actual > 0, el_min + y_actual, 1)
+
+    all_src = sorted(set(sources))
+
+    # ── Figure 1 : Prediction Accuracy ────────────────────────────────────────
+    fig, axes = plt.subplots(2, 2, figsize=(14, 11))
+    fig.suptitle(
+        f"Prediction Accuracy   (CV MAE = {cv_mae:.1f} min)",
+        fontsize=14, fontweight="bold",
+    )
+
+    # [0,0] Predicted vs Actual scatter
+    ax = axes[0, 0]
+    for src in all_src:
+        idx = [i for i, s in enumerate(sources) if s == src]
+        ax.scatter(y_actual[idx], y_pred[idx],
+                   alpha=0.45, s=14, color=src_color(src), label=src)
+    lim = max(y_actual.max(), y_pred.max()) * 1.05
+    ax.plot([0, lim], [0, lim], "r--", lw=1.2, alpha=0.7, label="perfect")
+    ax.set_xlim(0, lim); ax.set_ylim(0, lim)
+    ax.set_xlabel("Actual remaining (min)")
+    ax.set_ylabel("Predicted remaining (min)")
+    ax.set_title("Predicted vs Actual")
+    ax.legend(fontsize=8)
+
+    # [0,1] MAE by fraction of cook seen
+    ax = axes[0, 1]
+    brackets = [(0.0, 0.3, "0–30%"), (0.3, 0.6, "30–60%"),
+                (0.6, 0.9, "60–90%"), (0.9, 1.0, "90–100%")]
+    b_labels, b_maes = [], []
+    for lo, hi, label in brackets:
+        idx = np.where((fracs >= lo) & (fracs < hi))[0]
+        if len(idx):
+            b_maes.append(_mae(y_actual[idx], y_pred[idx]))
+            b_labels.append(f"{label}\n(n={len(idx)})")
+    bars = ax.bar(range(len(b_maes)), b_maes, color="#5C6BC0", alpha=0.85)
+    for bar, mae in zip(bars, b_maes):
+        ax.text(bar.get_x() + bar.get_width() / 2,
+                bar.get_height() + 0.1, f"{mae:.1f}",
+                ha="center", va="bottom", fontsize=9)
+    ax.set_xticks(range(len(b_labels))); ax.set_xticklabels(b_labels, fontsize=9)
+    ax.set_ylabel("MAE (min)")
+    ax.set_title("MAE by Fraction of Cook Seen")
+    ax.axhline(cv_mae, color="red", ls="--", lw=1.2,
+               label=f"CV MAE = {cv_mae:.1f} min")
+    ax.legend(fontsize=8)
+
+    # [1,0] Residual distribution
+    ax = axes[1, 0]
+    ax.hist(residuals, bins=40, color="#5C6BC0", alpha=0.75, edgecolor="white")
+    ax.axvline(0, color="red", ls="--", lw=1.5)
+    ax.axvline(float(np.median(residuals)), color="orange", ls="--", lw=1.2,
+               label=f"median = {float(np.median(residuals)):.1f} min")
+    ax.set_xlabel("Residual: predicted − actual (min)")
+    ax.set_ylabel("Count")
+    ax.set_title("Residual Distribution")
+    ax.legend(fontsize=8)
+
+    # [1,1] Residuals vs ambient temperature
+    ax = axes[1, 1]
+    for src in all_src:
+        mask = np.array([s == src for s in sources])
+        ax.scatter(T_amb[mask], residuals[mask],
+                   alpha=0.35, s=12, color=src_color(src), label=src)
+    ax.axhline(0, color="red", ls="--", lw=1.2)
+    ax.set_xlabel("Ambient temperature (°C)")
+    ax.set_ylabel("Residual: predicted − actual (min)")
+    ax.set_title("Residuals vs Ambient Temp")
+    ax.legend(fontsize=8)
+
+    plt.tight_layout()
+    p = os.path.join(output_dir, "accuracy.png")
+    plt.savefig(p, dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"  Plot: {p}")
+
+    # ── Figure 2 : Training Data Overview ────────────────────────────────────
+    fig, axes = plt.subplots(2, 2, figsize=(14, 11))
+    fig.suptitle("Training Data Overview", fontsize=14, fontweight="bold")
+
+    cook_srcs = sorted(set(c["source"] for c in all_cooks))
+
+    # [0,0] Cook count by source
+    ax = axes[0, 0]
+    src_counts = {s: sum(1 for c in all_cooks if c["source"] == s) for s in cook_srcs}
+    bars = ax.bar(src_counts.keys(), src_counts.values(),
+                  color=[src_color(s) for s in src_counts])
+    for bar, (src, n) in zip(bars, src_counts.items()):
+        ax.text(bar.get_x() + bar.get_width() / 2,
+                bar.get_height() + 0.2, str(n),
+                ha="center", va="bottom", fontsize=11, fontweight="bold")
+    ax.set_ylabel("Number of cooks")
+    ax.set_title(f"Cooks by Source  (total = {len(all_cooks)})")
+
+    # [0,1] Mean ambient temperature per cook
+    ax = axes[0, 1]
+    for src in cook_srcs:
+        ambs = [float(np.mean(c["ambient"])) for c in all_cooks if c["source"] == src]
+        ax.hist(ambs, bins=20, alpha=0.65, color=src_color(src), label=f"{src} ({len(ambs)})")
+    ax.set_xlabel("Mean ambient temperature (°C)")
+    ax.set_ylabel("Count")
+    ax.set_title("Ambient Temperature Distribution")
+    ax.legend(fontsize=8)
+
+    # [1,0] Cook duration to target
+    ax = axes[1, 0]
+    for src in cook_srcs:
+        durs = [c["elapsed_s"][c["endpoint_idx"]] / 60.0
+                for c in all_cooks if c["source"] == src]
+        ax.hist(durs, bins=20, alpha=0.65, color=src_color(src), label=src)
+    ax.set_xlabel("Active cook duration (min)")
+    ax.set_ylabel("Count")
+    ax.set_title("Cook Duration Distribution")
+    ax.legend(fontsize=8)
+
+    # [1,1] Internal temp rise (start → target crossing)
+    ax = axes[1, 1]
+    for src in cook_srcs:
+        rises = [c["internal"][c["endpoint_idx"]] - c["internal"][0]
+                 for c in all_cooks if c["source"] == src]
+        ax.hist(rises, bins=20, alpha=0.65, color=src_color(src), label=src)
+    ax.set_xlabel("Temperature rise to target (°C)")
+    ax.set_ylabel("Count")
+    ax.set_title("Internal Temp Rise Distribution")
+    ax.legend(fontsize=8)
+
+    plt.tight_layout()
+    p = os.path.join(output_dir, "training_data.png")
+    plt.savefig(p, dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"  Plot: {p}")
+
+    # ── Figure 3 : Sample Cook Curves ─────────────────────────────────────────
+    import random as _random
+    rng = _random.Random(42)
+
+    selected: list[dict] = []
+    for src in cook_srcs:
+        pool = [c for c in all_cooks if c["source"] == src]
+        selected.extend(rng.sample(pool, min(3, len(pool))))
+
+    ncols = 3
+    nrows = max(1, (len(selected) + ncols - 1) // ncols)
+    fig, axes_grid = plt.subplots(nrows, ncols, figsize=(15, 4.5 * nrows))
+    # normalise axes to 2-D array
+    if nrows == 1 and ncols == 1:
+        axes_grid = np.array([[axes_grid]])
+    elif nrows == 1:
+        axes_grid = np.array([axes_grid])
+    elif ncols == 1:
+        axes_grid = axes_grid.reshape(-1, 1)
+
+    fig.suptitle("Sample Cook Temperature Profiles", fontsize=14, fontweight="bold")
+
+    for k, cook in enumerate(selected):
+        ax = axes_grid[k // ncols][k % ncols]
+        ep  = cook["endpoint_idx"]
+        el  = [e / 60.0 for e in cook["elapsed_s"][:ep + 1]]
+        tin = cook["internal"][:ep + 1]
+        tam = cook["ambient"][:ep + 1]
+        col = src_color(cook["source"])
+
+        ax.plot(el, tin, color=col, lw=1.8, label="Internal")
+        ax2 = ax.twinx()
+        ax2.plot(el, tam, color="gray", lw=1.0, ls="--", alpha=0.55, label="Ambient")
+        ax2.set_ylabel("Ambient (°C)", fontsize=7, color="gray")
+        ax2.tick_params(axis="y", labelsize=7, colors="gray")
+
+        ax.axhline(cook["target_temp"], color="red", ls=":", lw=1.2, alpha=0.7)
+        ax.set_xlabel("Elapsed (min)", fontsize=8)
+        ax.set_ylabel("Internal (°C)", fontsize=8)
+        title = cook["cook_id"]
+        if len(title) > 28:
+            title = "…" + title[-25:]
+        ax.set_title(f"{title}  [{cook['source']}]", fontsize=7)
+
+    for k in range(len(selected), nrows * ncols):
+        axes_grid[k // ncols][k % ncols].set_visible(False)
+
+    plt.tight_layout()
+    p = os.path.join(output_dir, "cook_curves.png")
+    plt.savefig(p, dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"  Plot: {p}")
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -700,12 +1035,24 @@ def main() -> None:
         "--output-dir", default=str(here / "retrain_output"),
         help="Output directory for model and report (default: ./retrain_output)",
     )
+    parser.add_argument(
+        "--supabase-key", default="",
+        help="Supabase service role key to pull shared cooks "
+             "(or set SUPABASE_SERVICE_KEY env var)",
+    )
+    parser.add_argument(
+        "--no-plots", action="store_true",
+        help="Skip generating analysis PNG files after training",
+    )
     args = parser.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
 
     # Load cook_presets.json for cook_name → meat mapping
-    presets_path = here / "www" / "probe-ability" / "cook_presets.json"
+    # Check new HACS location first, fall back to legacy www/probe-ability/ path
+    presets_path = here / "custom_components" / "probe_ability" / "www" / "cook_presets.json"
+    if not presets_path.exists():
+        presets_path = here / "www" / "probe-ability" / "cook_presets.json"
     presets: dict | None = None
     if presets_path.exists():
         try:
@@ -723,6 +1070,16 @@ def main() -> None:
     # Also pick up any probe_ability-format exports that landed in meater_exports/
     all_cooks += load_pa_exports(meater_dir, presets)
     all_cooks += load_pa_exports(args.pa_exports, presets)
+
+    supabase_key = args.supabase_key or os.environ.get("SUPABASE_SERVICE_KEY", "")
+    if supabase_key:
+        all_cooks += load_supabase_exports(
+            "https://hlsfrqvfhtauoyhugyou.supabase.co",
+            supabase_key,
+            presets,
+        )
+    else:
+        print("  Supabase:              skipped (set SUPABASE_SERVICE_KEY or --supabase-key)")
 
     if not all_cooks:
         sys.exit("No cook data found. Check meater_exports/ and --pa-exports path.")
@@ -752,7 +1109,12 @@ def main() -> None:
 
     # ── Train ──
     print("\nTraining model…")
-    model = train(all_rows, args.output_dir)
+    model, cv_mae = train(all_rows, args.output_dir)
+
+    # ── Plots ──
+    if not args.no_plots:
+        print("\nGenerating analysis plots…")
+        generate_plots(model, all_rows, all_cooks, args.output_dir, cv_mae)
 
     # ── Compile ──
     print("\nCompiling model…")

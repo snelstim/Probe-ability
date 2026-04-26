@@ -16,17 +16,17 @@ A Home Assistant custom integration that predicts when your meat will reach a ta
 
 Probe-ability uses a two-layer prediction system:
 
-**1. ML model (primary)** — A Gradient Boosted Regressor trained on 140 real cooks (133 from a Meater device, 7 from Probe-ability exports) across beef, pork, poultry, lamb, and fish. It predicts time remaining from 17 features: current and starting temperatures, heating rate, deceleration, elapsed time, ambient temperature statistics, stall detection, and meat type. It achieves ~4 min cross-validated mean absolute error across all meat types and is accurate from the moment collecting ends. The model is embedded directly in `ml_model_code.py` (no external model file needed) and requires `scikit-learn` (installed automatically by Home Assistant on first run).
+**1. ML model (primary)** : A Gradient Boosted Regressor trained on 140 real cooks (133 from a Meater device, 7 from Probe-ability exports) across beef, pork, poultry, lamb, and fish. It predicts time remaining from 17 features: current and starting temperatures, heating rate, deceleration, elapsed time, ambient temperature statistics, stall detection, and meat type. It achieves ~4 min cross-validated mean absolute error across all meat types and is accurate from the moment collecting ends. The model is embedded directly in `ml_model_code.py` (no external model file needed) and requires `scikit-learn` (installed automatically by Home Assistant on first run).
 
-**2. Physics model (fallback)** — Newton's Law of Heating: fits an exponential curve to recent readings and solves for the time at which the meat will reach target temperature. Used automatically if the ML model is unavailable (model file missing, scikit-learn not yet installed, or prediction error).
+**2. Physics model (fallback)** : Newton's Law of Heating: fits an exponential curve to recent readings and solves for the time at which the meat will reach target temperature. Used automatically if the ML model is unavailable (model file missing, scikit-learn not yet installed, or prediction error).
 
 Both layers share the same data pipeline: readings are collected for ~10 minutes before any prediction is made, ensuring there is enough temperature history to compute the features the ML model needs.
 
-**Stall detection** — During barbecue stalls (common with brisket and pork shoulder), heating rate drops near zero. Probe-ability detects this plateau and flags predictions as low confidence. The ML model was trained on cooks that include stalls and handles them significantly better than the physics-only fallback.
+**Stall detection** : During barbecue stalls (common with brisket and pork shoulder), heating rate drops near zero. Probe-ability detects this plateau and flags predictions as low confidence. The ML model was trained on cooks that include stalls and handles them significantly better than the physics-only fallback.
 
-**EMA smoothing** — The time-remaining estimate is smoothed using an exponential moving average (α = 0.15) to dampen sensor noise without hiding real trends, preventing the display from jumping between readings.
+**EMA smoothing** : The time-remaining estimate is smoothed using an exponential moving average (α = 0.15) to dampen sensor noise without hiding real trends, preventing the display from jumping between readings.
 
-**Pull-from-heat warning** — Meat continues warming after removal from heat (carryover cooking). Probe-ability calculates the pull temperature and shows a prominent warning when the meat reaches it.
+**Pull-from-heat warning** : Meat continues warming after removal from heat (carryover cooking). Probe-ability calculates the pull temperature and shows a prominent warning when the meat reaches it.
 
 ---
 
@@ -56,7 +56,7 @@ If this line appears, the ML model is active. If it's absent, predictions fall b
 
 ### Lovelace card
 
-The card JavaScript is served automatically by the integration — no manual file copying needed.
+The card JavaScript is served automatically by the integration, no manual file copying needed.
 
 In Lovelace, go to **Edit Dashboard → Manage Resources** and add:
 - URL: `/probe_ability/probe-ability-card.js`
@@ -72,7 +72,7 @@ The config flow is a one-time hardware setup. It does **not** ask for target tem
 
 | Field | Required | Description |
 |---|---|---|
-| **Probe 1 sensor** | Yes | Internal (meat) temperature sensor — primary probe |
+| **Probe 1 sensor** | Yes | Internal (meat) temperature sensor ; primary probe |
 | **Ambient sensor** | Yes | Ambient (oven/smoker/air) temperature sensor |
 | **Probe 2 sensor** | No | Second internal probe (optional) |
 | **Probe 3 sensor** | No | Third internal probe (optional) |
@@ -96,9 +96,9 @@ entity: sensor.probe_ability_time_remaining
 |---|---|---|
 | `entity` | **Yes** | The primary `time_remaining` sensor entity ID |
 | `eta_entity` | No | The `estimated_completion` sensor entity ID. If omitted the ETA is computed client-side from the time remaining value |
-| `entry_id` | No | Config entry ID — only needed when you have **multiple instances** of the integration installed. See [Multiple instances](#multiple-instances) |
-| `probe_sensors` | No | List of internal probe sensor entity IDs — enables pre-flight availability checking in the card UI (see [Probe availability](#probe-availability)) |
-| `ambient_sensor` | No | Ambient (oven/smoker) sensor entity ID — if set, the card shows "no sensors" until the ambient sensor is also available |
+| `entry_id` | No | Config entry ID, only needed when you have **multiple instances** of the integration installed. See [Multiple instances](#multiple-instances) |
+| `probe_sensors` | No | List of internal probe sensor entity IDs; enables pre-flight availability checking in the card UI (see [Probe availability](#probe-availability)) |
+| `ambient_sensor` | No | Ambient (oven/smoker) sensor entity ID; if set, the card shows "no sensors" until the ambient sensor is also available |
 
 ### Minimal (single instance)
 
@@ -129,17 +129,17 @@ probe_sensors:
 
 The card starts in idle mode. Before pressing Start, choose your cook setup:
 
-- **Combined mode** — all probes monitor the same piece of meat (e.g. a brisket with probes in different spots). One target temperature, one shared timer showing when the *slowest* probe reaches target.
-- **Individual mode** — each probe is independent (e.g. 3 steaks at different doneness levels). Each probe gets its own target temperature and countdown timer.
+- **Combined mode** : all probes monitor the same piece of meat (e.g. a brisket with probes in different spots). One target temperature, one shared timer showing when the *slowest* probe reaches target.
+- **Individual mode** : each probe is independent (e.g. 3 steaks at different doneness levels). Each probe gets its own target temperature and countdown timer.
 
-Pick a **preset** from the dropdown (e.g. *Beef Sirloin Medium Rare — 54°C*) or type a custom target temperature, then press **Start Cook** (combined) or **Start Probe N** (individual).
+Pick a **preset** from the dropdown (e.g. *Beef Sirloin Medium Rare - 54°C*) or type a custom target temperature, then press **Start Cook** (combined) or **Start Probe N** (individual).
 
 ### Collecting data
 
 After starting, the card shows a progress bar while gathering the minimum data needed to make a reliable prediction (~10 readings over ~10 minutes). The bar fills in two phases:
 
-1. **Phase 1** — reading count bar fills to 10/10
-2. **Phase 2** — data span bar fills as the 10-minute window accumulates, with a "Ready at HH:MM" estimate
+1. **Phase 1** : reading count bar fills to 10/10
+2. **Phase 2** : data span bar fills as the 10-minute window accumulates, with a "Ready at HH:MM" estimate
 
 You can cancel during this phase.
 
@@ -162,7 +162,7 @@ If `probe_sensors` is configured in the card YAML, the card checks sensor availa
 
 | Available probes | UI shown |
 |---|---|
-| **0** | Warning message — no start button |
+| **0** | Warning message : no start button |
 | **1** | Single form, no combined/individual toggle |
 | **2–3** | Full UI with mode toggle; only available probe slots shown in individual mode |
 
@@ -232,14 +232,14 @@ Start a new cook. If a sensor is unavailable when this is called, a red error no
 | Parameter | Required | Default | Description |
 |---|---|---|---|
 | `target_temp` | No | 74 | Target internal temperature in °C |
-| `cook_name` | No | `"Cook"` | Name label for this cook — also used by the ML model to select the correct meat type profile |
+| `cook_name` | No | `"Cook"` | Name label for this cook ; also used by the ML model to select the correct meat type profile |
 | `probe_mode` | No | `"combined"` | `"combined"` or `"individual"` |
 | `probe_index` | No | — | Which probe to start (0–2). Only used in individual mode |
 | `entry_id` | No | — | Target a specific integration instance (see below) |
 
-**Combined mode** — omit `probe_index`. All configured probes with available sensors are started together.
+**Combined mode** : omit `probe_index`. All configured probes with available sensors are started together.
 
-**Individual mode** — set `probe_mode: "individual"` and `probe_index` to start one specific probe.
+**Individual mode** : set `probe_mode: "individual"` and `probe_index` to start one specific probe.
 
 > **Tip:** Use a preset name matching one of the card's built-in presets as `cook_name` to give the ML model the most accurate meat type context. The format is `"Category Cut Doneness"` — for example:
 > - `"Beef Sirloin Medium Rare"`, `"Beef Rib Eye Medium"`, `"Beef Brisket Fall Apart"`
@@ -275,11 +275,11 @@ Change the target temperature mid-cook without interrupting data collection.
 
 ### What it is
 
-Every integration instance installed in HA gets a unique `entry_id` — a string like `abc123def456`. Probe-ability uses this to route service calls and card state to the correct instance.
+Every integration instance installed in HA gets a unique `entry_id` ; a string like `abc123def456`. Probe-ability uses this to route service calls and card state to the correct instance.
 
 ### When you need it
 
-You only need `entry_id` if you have **more than one instance** of Probe-ability installed (e.g. one for the smoker and one for the oven). With a single instance, `entry_id` can always be omitted — the integration finds the only available instance automatically.
+You only need `entry_id` if you have **more than one instance** of Probe-ability installed (e.g. one for the smoker and one for the oven). With a single instance, `entry_id` can always be omitted, the integration finds the only available instance automatically.
 
 ### How to find your entry_id
 
@@ -438,7 +438,7 @@ Enable **Share anonymous cook data** in the config flow to automatically send co
 
 Data is sent via an INSERT-only REST API secured with Row Level Security — anonymous clients can insert rows but cannot read, modify, or delete any data.
 
-You can have export enabled without sharing, sharing enabled without export, both, or neither — they are independent settings.
+You can have export enabled without sharing, sharing enabled without export, both, or neither, they are independent settings.
 
 ---
 

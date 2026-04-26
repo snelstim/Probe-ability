@@ -81,6 +81,8 @@ The config flow is a one-time hardware setup. It does **not** ask for target tem
 
 > **Tip:** All sensor entities must have the `temperature` device class. The entity selector in the config flow filters for this automatically.
 
+> **Tip:** Probe resolution matters. A probe that reports in 0.1°C increments gives the model much finer data to work with than one that rounds to the nearest 1°C — which produces a staircase signal that makes heating rate and deceleration features less accurate. If you have a choice of sensors, pick the higher-resolution one.
+
 ---
 
 ## Card configuration

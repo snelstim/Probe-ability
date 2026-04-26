@@ -8,7 +8,7 @@ A Home Assistant custom integration that predicts when your meat will reach a ta
 
 Probe-ability uses a two-layer prediction system:
 
-**1. ML model (primary)** — A Gradient Boosted Regressor trained on 140 real cooks (133 from a Meater device, 7 from Probe-ability exports) across beef, pork, poultry, lamb, and fish. It predicts time remaining from 17 features: current and starting temperatures, heating rate, deceleration, elapsed time, ambient temperature statistics, stall detection, and meat type. It achieves ~4 min cross-validated mean absolute error across all meat types and is accurate from the moment collecting ends. The model is stored in `model.pkl` inside the component folder and requires `scikit-learn` (installed automatically by Home Assistant on first run).
+**1. ML model (primary)** — A Gradient Boosted Regressor trained on 140 real cooks (133 from a Meater device, 7 from Probe-ability exports) across beef, pork, poultry, lamb, and fish. It predicts time remaining from 17 features: current and starting temperatures, heating rate, deceleration, elapsed time, ambient temperature statistics, stall detection, and meat type. It achieves ~4 min cross-validated mean absolute error across all meat types and is accurate from the moment collecting ends. The model is embedded directly in `ml_model_code.py` (no external model file needed) and requires `scikit-learn` (installed automatically by Home Assistant on first run).
 
 **2. Physics model (fallback)** — Newton's Law of Heating: fits an exponential curve to recent readings and solves for the time at which the meat will reach target temperature. Used automatically if the ML model is unavailable (model file missing, scikit-learn not yet installed, or prediction error).
 
@@ -24,9 +24,18 @@ Both layers share the same data pipeline: readings are collected for ~10 minutes
 
 ## Installation
 
-### 1. Integration
+### Via HACS (recommended)
 
-1. Copy the `custom_components/probe_ability` folder into your HA `config/custom_components/` directory. Make sure `model.pkl` is included — it contains the trained ML model.
+1. In HACS, go to **Integrations → ⋮ → Custom repositories**.
+2. Add `https://github.com/snelstim/Probe-ability` as an **Integration** repository.
+3. Search for **Probe-ability** and install it.
+4. Restart Home Assistant.
+5. Go to **Settings → Devices & Services → Add Integration** and search for **Probe-ability**.
+6. Fill in the configuration form (see [Configuration](#configuration) below).
+
+### Manual installation
+
+1. Copy the `custom_components/probe_ability` folder into your HA `config/custom_components/` directory.
 2. Restart Home Assistant. On first run, HA will install `scikit-learn` automatically (this may take a minute).
 3. Go to **Settings → Devices & Services → Add Integration** and search for **Probe-ability**.
 4. Fill in the configuration form (see [Configuration](#configuration) below).
@@ -37,13 +46,15 @@ Probe-ability: ML model loaded
 ```
 If this line appears, the ML model is active. If it's absent, predictions fall back to the physics model.
 
-### 2. Lovelace Card
+### Lovelace card
 
-1. Copy the `www/probe-ability/` folder to your HA `config/www/` directory (keeping the subfolder).
-2. In Lovelace, go to **Edit Dashboard → Manage Resources** and add:
-   - URL: `/local/probe-ability/probe-ability-card.js`
-   - Type: JavaScript Module
-3. Add the card to a dashboard (see [Card configuration](#card-configuration) below).
+The card JavaScript is served automatically by the integration — no manual file copying needed.
+
+In Lovelace, go to **Edit Dashboard → Manage Resources** and add:
+- URL: `/probe_ability/probe-ability-card.js`
+- Type: JavaScript Module
+
+Then add the card to a dashboard (see [Card configuration](#card-configuration) below).
 
 ---
 
@@ -454,7 +465,7 @@ Cross-validated MAE: ~4 min overall; accurate from the end of the collecting pha
 
 **Fallback — Physics (Newton's Law of Heating):**
 
-Fits the curve `T(t) = T_ambient − (T_ambient − T₀) × e^(−kt)` to recent readings via least-squares regression, then solves for when `T = target`. Switches to linear extrapolation during stalls or when ambient is too close to target. Used automatically when `model.pkl` is missing or scikit-learn is unavailable.
+Fits the curve `T(t) = T_ambient − (T_ambient − T₀) × e^(−kt)` to recent readings via least-squares regression, then solves for when `T = target`. Switches to linear extrapolation during stalls or when ambient is too close to target. Used automatically when `ml_model_code.py` cannot be loaded or scikit-learn is unavailable.
 
 ### Combined ETA
 
@@ -462,7 +473,7 @@ In combined mode the displayed ETA is `max(time_remaining)` across all active no
 
 ### ML model file
 
-`model.pkl` lives inside `custom_components/probe_ability/` and is not tracked by git. If you re-clone the repository, copy it back from your training output or re-run `retrain.py`.
+The ML model is embedded in `ml_model_code.py` inside `custom_components/probe_ability/` and is committed to git. If you re-clone the repository the model is already there. To update it after retraining, re-run `retrain.py` and copy the generated `ml_model_code.py` into the component folder.
 
 ### Retraining the model
 

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-__version__ = "0.6.2"
+__version__ = "0.7.0"
 
 import logging
 import time
+from pathlib import Path
 
 import voluptuous as vol
 
@@ -45,6 +46,18 @@ from .predictor import CookPredictor
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = [Platform.SENSOR]
+
+_WWW_DIR = Path(__file__).parent / "www"
+_URL_BASE = "/probe_ability"
+
+
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    """Register static files for the Lovelace card."""
+    for fname in ("probe-ability-card.js", "cook_presets.json", "probe-ability-icon.svg"):
+        fpath = _WWW_DIR / fname
+        if fpath.exists():
+            hass.http.register_static_path(f"{_URL_BASE}/{fname}", str(fpath), cache_headers=True)
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

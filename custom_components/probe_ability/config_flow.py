@@ -57,10 +57,12 @@ class CookPredictorConfigFlow(ConfigFlow, domain=DOMAIN):
             await self.async_set_unique_id(user_input[CONF_INTERNAL_SENSOR])
             self._abort_if_unique_id_configured()
 
-            return self.async_create_entry(
-                title="Probe-ability",
-                data=user_input,
-            )
+            # Title the entry after the sensor's friendly name so multiple
+            # instances (e.g. smoker + oven) are easy to tell apart in the UI.
+            state = self.hass.states.get(user_input[CONF_INTERNAL_SENSOR])
+            title = state.name if state else user_input[CONF_INTERNAL_SENSOR]
+
+            return self.async_create_entry(title=title, data=user_input)
 
         return self.async_show_form(step_id="user", data_schema=SETUP_SCHEMA)
 

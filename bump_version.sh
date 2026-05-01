@@ -19,7 +19,7 @@ fi
 
 MANIFEST="custom_components/probe_ability/manifest.json"
 INIT="custom_components/probe_ability/__init__.py"
-CARD="www/probe-ability/probe-ability-card.js"
+CARD="custom_components/probe_ability/www/probe-ability-card.js"
 
 # Update manifest.json
 sed -i '' "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" "$MANIFEST"

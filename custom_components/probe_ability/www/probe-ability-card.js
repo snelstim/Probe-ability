@@ -11,11 +11,10 @@
  *      ⏱ Countdown — ring drains as time passes
  *      🌡 Temp-up  — ring fills as temperature rises toward target
  *
- * Installation:
- *   1. Copy this file to config/www/probe-ability-card.js
- *   2. Add as a resource in Lovelace:
- *      URL: /local/probe-ability-card.js
- *      Type: JavaScript Module
+ * Installation (via HACS — recommended):
+ *   Add as a Lovelace resource:
+ *     URL: /probe_ability/probe-ability-card.js
+ *     Type: JavaScript Module
  *
  * Card config:
  *   type: custom:probe-ability-card
@@ -43,7 +42,7 @@ function _loadPresets() {
   return new Promise((resolve) => {
     _presetsWaiters.push(resolve);
     if (_presetsWaiters.length === 1) {
-      fetch("/local/probe-ability/cook_presets.json")
+      fetch("/probe_ability/cook_presets.json")
         .then((r) => r.json())
         .then((d) => {
           _presets = d;
@@ -238,6 +237,10 @@ class CookPredictorCard extends HTMLElement {
       }
       if (changed) localStorage.setItem("probe_ability_active_presets", JSON.stringify(ap));
     } catch (e) {}
+    // Tracks whether a stop confirmation prompt is open.
+    // While true, hass() skips full re-renders so the prompt stays visible.
+    this._confirmPending = false;
+
     // Start loading presets immediately so data is ready before first render
     _loadPresets().then(() => { if (this._hass) this._render(); });
   }
@@ -272,6 +275,10 @@ class CookPredictorCard extends HTMLElement {
         }
       }
     }
+
+    // Skip full re-render while a stop confirmation prompt is open.
+    // The prompt is an inline DOM replacement — a re-render would wipe it.
+    if (!isIdle && this._confirmPending) return;
 
     this._render();
   }
@@ -1368,6 +1375,7 @@ class CookPredictorCard extends HTMLElement {
   // by the re-render — the user simply clicks Stop again.
   _addStopConfirm(btn, stopFn, confirmLabel = "Yes, stop") {
     btn.addEventListener("click", () => {
+      this._confirmPending = true;   // block hass() re-renders while prompt is open
       const wrapper = document.createElement("div");
       wrapper.style.cssText = "margin-top:4px;";
       wrapper.innerHTML = `
@@ -1388,8 +1396,14 @@ class CookPredictorCard extends HTMLElement {
           </button>
         </div>`;
       btn.replaceWith(wrapper);
-      wrapper.querySelector(".cp-confirm-yes").addEventListener("click", stopFn);
-      wrapper.querySelector(".cp-confirm-no").addEventListener("click", () => wrapper.replaceWith(btn));
+      wrapper.querySelector(".cp-confirm-yes").addEventListener("click", () => {
+        this._confirmPending = false;
+        stopFn();
+      });
+      wrapper.querySelector(".cp-confirm-no").addEventListener("click", () => {
+        this._confirmPending = false;
+        wrapper.replaceWith(btn);
+      });
     });
   }
 
@@ -1416,8 +1430,11 @@ class CookPredictorCard extends HTMLElement {
     return document.createElement("probe-ability-card-editor");
   }
 
-  static getStubConfig() {
-    return { entity: "", eta_entity: "", probe_sensors: [] };
+  static getStubConfig(hass) {
+    const entity = hass
+      ? Object.keys(hass.states).find((e) => /^sensor\.probe_ability_time_remaining/.test(e)) || ""
+      : "";
+    return { entity };
   }
 }
 
@@ -1425,50 +1442,124 @@ class CookPredictorCard extends HTMLElement {
 
 class CookPredictorCardEditor extends HTMLElement {
   setConfig(config) {
-    this._config = config;
+    this._config = { ...config };
     this._render();
   }
 
   set hass(hass) {
     this._hass = hass;
+    // Push hass to all entity pickers already in the DOM without re-rendering.
+    this.querySelectorAll("ha-entity-picker").forEach((el) => { el.hass = hass; });
+  }
+
+  _emit() {
+    this.dispatchEvent(
+      new CustomEvent("config-changed", {
+        detail: { config: { ...this._config } },
+        bubbles: true,
+        composed: true,
+      })
+    );
   }
 
   _render() {
+    const cfg = this._config || {};
+    const ps = cfg.probe_sensors || [];
+
     this.innerHTML = `
-      <div style="padding:16px;">
-        <div style="margin-bottom:12px;">
-          <label style="display:block;margin-bottom:4px;font-size:0.9em;">Time Remaining Entity</label>
-          <input id="entity" value="${this._config.entity || ""}"
-            placeholder="sensor.probe_ability_time_remaining"
-            style="width:100%;box-sizing:border-box;padding:8px;border:1px solid var(--divider-color);border-radius:4px;" />
-        </div>
-        <div style="margin-bottom:12px;">
-          <label style="display:block;margin-bottom:4px;font-size:0.9em;">ETA Entity (optional — auto-computed if omitted)</label>
-          <input id="eta_entity" value="${this._config.eta_entity || ""}"
-            placeholder="sensor.probe_ability_estimated_completion"
-            style="width:100%;box-sizing:border-box;padding:8px;border:1px solid var(--divider-color);border-radius:4px;" />
-        </div>
+      <div style="padding:16px;display:flex;flex-direction:column;gap:10px;">
+        <ha-entity-picker id="ed-entity"
+          label="Time remaining entity *"
+          allow-custom-entity>
+        </ha-entity-picker>
+        <ha-entity-picker id="ed-eta-entity"
+          label="ETA entity (optional)"
+          allow-custom-entity>
+        </ha-entity-picker>
+        <ha-entity-picker id="ed-ambient-sensor"
+          label="Ambient sensor (optional)"
+          allow-custom-entity>
+        </ha-entity-picker>
+        <ha-entity-picker id="ed-probe-0"
+          label="Probe 1 sensor (optional)"
+          allow-custom-entity>
+        </ha-entity-picker>
+        <ha-entity-picker id="ed-probe-1"
+          label="Probe 2 sensor (optional)"
+          allow-custom-entity>
+        </ha-entity-picker>
+        <ha-entity-picker id="ed-probe-2"
+          label="Probe 3 sensor (optional)"
+          allow-custom-entity>
+        </ha-entity-picker>
         <div>
-          <label style="display:block;margin-bottom:4px;font-size:0.9em;">Entry ID (optional, for multi-instance)</label>
-          <input id="entry_id" value="${this._config.entry_id || ""}"
+          <label style="display:block;font-size:0.82em;color:var(--secondary-text-color);margin-bottom:4px;">
+            Entry ID (only needed when multiple instances are installed)
+          </label>
+          <input id="ed-entry-id" type="text" value="${cfg.entry_id || ""}"
             placeholder="Leave empty for single instance"
-            style="width:100%;box-sizing:border-box;padding:8px;border:1px solid var(--divider-color);border-radius:4px;" />
+            style="width:100%;box-sizing:border-box;padding:9px 11px;
+                   border:1px solid var(--divider-color);border-radius:6px;
+                   font-size:0.95em;background:var(--card-background-color);
+                   color:var(--primary-text-color);" />
         </div>
       </div>`;
 
-    ["entity", "eta_entity", "entry_id"].forEach((field) => {
-      this.querySelector(`#${field}`).addEventListener("change", (e) => {
-        const newConfig = { ...this._config, [field]: e.target.value };
-        if (!newConfig[field]) delete newConfig[field];
-        this._config = newConfig;
-        this.dispatchEvent(
-          new CustomEvent("config-changed", {
-            detail: { config: this._config },
-            bubbles: true,
-            composed: true,
-          })
-        );
+    // Set .value on entity pickers via JS (LitElement property, not HTML attribute)
+    this.querySelector("#ed-entity").value        = cfg.entity         || "";
+    this.querySelector("#ed-eta-entity").value    = cfg.eta_entity     || "";
+    this.querySelector("#ed-ambient-sensor").value = cfg.ambient_sensor || "";
+    this.querySelector("#ed-probe-0").value = ps[0] || "";
+    this.querySelector("#ed-probe-1").value = ps[1] || "";
+    this.querySelector("#ed-probe-2").value = ps[2] || "";
+
+    // Push hass if it arrived before render
+    if (this._hass) {
+      this.querySelectorAll("ha-entity-picker").forEach((el) => { el.hass = this._hass; });
+    }
+
+    // Wire entity pickers
+    const wireEntityPicker = (id, applyFn) => {
+      const el = this.querySelector(`#${id}`);
+      if (!el) return;
+      el.addEventListener("value-changed", (e) => {
+        applyFn(e.detail.value || "");
+        this._emit();
       });
+    };
+
+    wireEntityPicker("ed-entity", (v) => {
+      this._config = { ...this._config, entity: v };
+    });
+    wireEntityPicker("ed-eta-entity", (v) => {
+      const c = { ...this._config };
+      if (v) c.eta_entity = v; else delete c.eta_entity;
+      this._config = c;
+    });
+    wireEntityPicker("ed-ambient-sensor", (v) => {
+      const c = { ...this._config };
+      if (v) c.ambient_sensor = v; else delete c.ambient_sensor;
+      this._config = c;
+    });
+    [0, 1, 2].forEach((i) => {
+      wireEntityPicker(`ed-probe-${i}`, (v) => {
+        const arr = [...(this._config.probe_sensors || [null, null, null])];
+        arr[i] = v || null;
+        const filtered = arr.filter(Boolean);
+        const c = { ...this._config };
+        if (filtered.length) c.probe_sensors = filtered;
+        else delete c.probe_sensors;
+        this._config = c;
+      });
+    });
+
+    // Wire entry_id plain input
+    this.querySelector("#ed-entry-id").addEventListener("change", (e) => {
+      const c = { ...this._config };
+      if (e.target.value) c.entry_id = e.target.value;
+      else delete c.entry_id;
+      this._config = c;
+      this._emit();
     });
   }
 }

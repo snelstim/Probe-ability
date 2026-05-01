@@ -1,5 +1,5 @@
 /**
- * Probe-ability Card v0.6.2
+ * Probe-ability Card v0.7.1
  *
  * Custom Lovelace card for the Probe-ability integration.
  * Shows cook status, predictions, and lets you start/stop cooks.
@@ -23,7 +23,7 @@
  *   entry_id: <your_entry_id>                               (optional)
  */
 
-const CARD_VERSION = "0.6.2";
+const CARD_VERSION = "0.7.1";
 
 // ─── Preset data (loaded async from cook_presets.json) ───────────────────────
 //

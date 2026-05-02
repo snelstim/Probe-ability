@@ -513,6 +513,28 @@ Place Meater export files in `meater_exports/` and/or Probe-ability CSV exports 
 
 ---
 
+## Troubleshooting
+
+### "Cannot start cook: ambient sensor is not available"
+
+The integration stores the ambient sensor entity ID at setup time. If your thermometer was re-paired, updated, or the Bluetooth integration changed how it names entities, the stored ID can become stale even though the sensor appears healthy in HA.
+
+**Fix:** Settings → Devices & Services → Probe-ability → **⋮ → Reconfigure** — re-select the correct ambient sensor entity and save. This is the most common cause of this error.
+
+You can verify what entity the integration is actually checking by looking at the HA log (Settings → System → Logs, search `probe_ability`) after a failed start attempt.
+
+### "Cannot start cook: no probe sensors are currently available"
+
+One or more internal probe sensors are returning `0`. This means the probe is physically not plugged into the thermometer unit. The Bluetooth connection may be fine, but the probe jack is empty — plug the probe in before starting.
+
+If a probe is inserted but still reads `0`, check the sensor state in **Developer Tools → Template**: `{{ states('sensor.your_probe_entity') }}`.
+
+### Card shows "No probe sensors available" at idle
+
+Same as above — all configured `probe_sensors` are returning `0` or `unavailable`. Check that all probes are physically connected to the thermometer. With `probe_sensors` not configured in the card, this check is skipped and the card relies on the backend to catch missing probes when Start is pressed.
+
+---
+
 ## Testing
 
 Test the prediction algorithm standalone, without running Home Assistant:

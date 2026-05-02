@@ -1477,13 +1477,19 @@ class CookPredictorCardEditor extends HTMLElement {
 
   // Rebuild card config from flat form data
   _fromFormData(data) {
-    const cfg = {};
+    // Start from existing config to preserve `type` and any other fields
+    const cfg = { ...this._config };
     if (data.entity)         cfg.entity         = data.entity;
+    else                     delete cfg.entity;
     if (data.eta_entity)     cfg.eta_entity     = data.eta_entity;
+    else                     delete cfg.eta_entity;
     if (data.ambient_sensor) cfg.ambient_sensor = data.ambient_sensor;
+    else                     delete cfg.ambient_sensor;
     const probes = [data.probe_sensor_0, data.probe_sensor_1, data.probe_sensor_2].filter(Boolean);
     if (probes.length)       cfg.probe_sensors  = probes;
+    else                     delete cfg.probe_sensors;
     if (data.entry_id)       cfg.entry_id       = data.entry_id;
+    else                     delete cfg.entry_id;
     return cfg;
   }
 

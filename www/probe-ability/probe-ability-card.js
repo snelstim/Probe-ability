@@ -806,14 +806,23 @@ class CookPredictorCard extends HTMLElement {
       }
     }
 
-    // Pull-from-heat: alert when current temp ≥ calculated pull point AND
-    // close to done (≤ 10 min remaining). Without the time guard, the alert
-    // fires whenever the current temp coincidentally equals the pull temp —
-    // which can happen 30+ minutes before the cook finishes.
+    // Pull-from-heat: alert when the COLDEST probe ≥ pull point AND close to
+    // done (≤ 10 min remaining on the combined/slowest-probe timer).
+    //
+    // In combined mode attrs.current_temp is always probe 1 (the primary),
+    // but the time remaining is driven by the slowest probe.  Using only
+    // probe 1's temp causes false alerts when probe 1 is almost done but
+    // probes 2/3 are still 10°C away.  We take the minimum across all
+    // active probes so the warning only fires when every probe is near done.
     const pullTemp = attrs.pull_temp ?? null;
-    const currentTemp = attrs.current_temp ?? null;
-    const shouldPull = pullTemp != null && currentTemp != null
-      && currentTemp >= pullTemp && phase !== "done"
+    const probeTemps = [
+      attrs.current_temp,
+      attrs.current_temp_2,
+      attrs.current_temp_3,
+    ].filter(v => v != null);
+    const minProbeTemp = probeTemps.length ? Math.min(...probeTemps) : null;
+    const shouldPull = pullTemp != null && minProbeTemp != null
+      && minProbeTemp >= pullTemp && phase !== "done"
       && (timeRemaining == null || timeRemaining <= 10);
 
     // Ring colour shifts to warning orange when it's time to pull

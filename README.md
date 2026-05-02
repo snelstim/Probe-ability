@@ -16,9 +16,9 @@ A Home Assistant custom integration that predicts when your meat will reach a ta
 
 Probe-ability uses a two-layer prediction system:
 
-**1. ML model (primary)** : A Gradient Boosted Regressor trained on 140 real cooks (133 from a Meater device, 7 from Probe-ability exports) across beef, pork, poultry, lamb, and fish. It predicts time remaining from 17 features: current and starting temperatures, heating rate, deceleration, elapsed time, ambient temperature statistics, stall detection, and meat type. It achieves ~4 min cross-validated mean absolute error across all meat types and is accurate from the moment collecting ends. The model is embedded directly in `ml_model_code.py` (no external model file needed) and requires `scikit-learn` (installed automatically by Home Assistant on first run).
+**1. ML model (primary)** : A Gradient Boosted Regressor trained on 140 real cooks (133 from a Meater device, 7 from Probe-ability exports) across beef, pork, poultry, lamb, and fish. It predicts time remaining from 17 features: current and starting temperatures, heating rate, deceleration, elapsed time, ambient temperature statistics, stall detection, and meat type. It achieves ~4 min cross-validated mean absolute error across all meat types and is accurate from the moment collecting ends. The model is embedded directly in `ml_model_code.py` as pure Python — no external ML libraries or model files are required.
 
-**2. Physics model (fallback)** : Newton's Law of Heating: fits an exponential curve to recent readings and solves for the time at which the meat will reach target temperature. Used automatically if the ML model is unavailable (model file missing, scikit-learn not yet installed, or prediction error).
+**2. Physics model (fallback)** : Newton's Law of Heating: fits an exponential curve to recent readings and solves for the time at which the meat will reach target temperature. Used automatically if the ML model is unavailable (prediction error or unexpected exception).
 
 Both layers share the same data pipeline: readings are collected for ~10 minutes before any prediction is made, ensuring there is enough temperature history to compute the features the ML model needs.
 
@@ -44,7 +44,7 @@ Both layers share the same data pipeline: readings are collected for ~10 minutes
 ### Manual installation
 
 1. Copy the `custom_components/probe_ability` folder into your HA `config/custom_components/` directory.
-2. Restart Home Assistant. On first run, HA will install `scikit-learn` automatically (this may take a minute).
+2. Restart Home Assistant.
 3. Go to **Settings → Devices & Services → Add Integration** and search for **Probe-ability**.
 4. Fill in the configuration form (see [Configuration](#configuration) below).
 
@@ -455,7 +455,7 @@ You can have export enabled without sharing, sharing enabled without export, bot
 | Carryover cooking model | `clamp((ambient − target) × 0.06, min=2°C, max=8°C)` — ambient-aware |
 | Stale probe exclusion (combined ETA) | Probe excluded after 5 minutes without a new reading |
 | State persistence | Survives HA restarts — cook state written to `.storage` |
-| External dependencies | `scikit-learn>=1.3.0` (ML model) |
+| External dependencies | None (ML model is pure Python, no packages needed) |
 
 ### Prediction model
 
@@ -475,7 +475,7 @@ Cross-validated MAE: ~4 min overall; accurate from the end of the collecting pha
 
 **Fallback — Physics (Newton's Law of Heating):**
 
-Fits the curve `T(t) = T_ambient − (T_ambient − T₀) × e^(−kt)` to recent readings via least-squares regression, then solves for when `T = target`. Switches to linear extrapolation during stalls or when ambient is too close to target. Used automatically when `ml_model_code.py` cannot be loaded or scikit-learn is unavailable.
+Fits the curve `T(t) = T_ambient − (T_ambient − T₀) × e^(−kt)` to recent readings via least-squares regression, then solves for when `T = target`. Switches to linear extrapolation during stalls or when ambient is too close to target. Used automatically when `ml_model_code.py` cannot be loaded or raises an unexpected error.
 
 ### Combined ETA
 

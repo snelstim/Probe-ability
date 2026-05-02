@@ -97,10 +97,28 @@ entity: sensor.probe_ability_time_remaining
 | Option | Required | Description |
 |---|---|---|
 | `entity` | **Yes** | The primary `time_remaining` sensor entity ID |
-| `eta_entity` | No | The `estimated_completion` sensor entity ID. If omitted the ETA is computed client-side from the time remaining value |
+| `eta_entity` | No | The `estimated_completion` sensor entity ID. If omitted the ETA is computed client-side from the time remaining value. In practice both give identical results — leave empty. |
 | `entry_id` | No | Config entry ID, only needed when you have **multiple instances** of the integration installed. See [Multiple instances](#multiple-instances) |
-| `probe_sensors` | No | List of internal probe sensor entity IDs; enables pre-flight availability checking in the card UI (see [Probe availability](#probe-availability)) |
-| `ambient_sensor` | No | Ambient (oven/smoker) sensor entity ID; if set, the card shows "no sensors" until the ambient sensor is also available |
+| `probe_sensors` | No | List of internal probe sensor entity IDs; enables per-probe availability checking in the card UI. See [Probe availability](#probe-availability). |
+| `ambient_sensor` | No | Ambient (oven/smoker) sensor entity ID. If set, the card blocks starting a cook until this sensor is available and returning a valid reading. The ambient temperature displayed in the card comes from the backend sensor attributes regardless of this setting. |
+
+#### How each option works in detail
+
+**`entity` — the main data source**
+
+This sensor's **attributes** provide everything the card displays: current temperature, target temperature, heating rate, stall detection, ambient temperature, and prediction model. Only the `time_remaining` sensors created by Probe-ability are valid here. In a multi-probe individual-mode setup, each probe has its own sensor (`sensor.probe_ability_time_remaining_probe_1`, etc.) with its own independent attribute set — pick the one for the probe you want as the primary display.
+
+**`eta_entity` — optional, redundant in practice**
+
+The card auto-computes the estimated completion time as `now + time_remaining_seconds`. If `eta_entity` is configured the card reads the datetime from that HA sensor instead. Both paths give the same result. Only set this if you need the ETA display to be driven by a specific HA sensor entity for automation or consistency reasons.
+
+**`ambient_sensor` — a readiness guard, not a data source**
+
+The ambient temperature shown in the card header comes from the `ambient_temp` attribute on the `entity` sensor (written by the backend integration). The card config's `ambient_sensor` field is used solely as a **readiness check**: if set, the card will show "No probe sensors available" and block the Start button whenever that sensor is unavailable, unknown, or reading zero. Leave it empty to skip this check and always allow starting.
+
+**`probe_sensors` — enables live availability detection**
+
+Without `probe_sensors` configured, the card assumes all probes reported by the backend are present. When configured, the card reads each sensor's state directly and hides any probe that is `unavailable`, `unknown`, or returning `0` — so a disconnected probe disappears from the UI rather than showing stale data. Recommended for multi-probe setups so the card accurately reflects which probes are actually connected.
 
 ### Minimal (single instance)
 

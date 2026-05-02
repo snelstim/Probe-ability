@@ -1438,129 +1438,77 @@ class CookPredictorCard extends HTMLElement {
   }
 }
 
-// ─── Visual editor ─────────────────────────────────────────────────────────────
+// ─── Visual editor (ha-form based) ─────────────────────────────────────────────
+
+const EDITOR_SCHEMA = [
+  { name: "entity",         label: "Time remaining entity (required)", selector: { entity: {} } },
+  { name: "eta_entity",     label: "ETA entity (optional)",            selector: { entity: {} } },
+  { name: "ambient_sensor", label: "Ambient sensor (optional)",        selector: { entity: {} } },
+  { name: "probe_sensor_0", label: "Probe 1 sensor (optional)",        selector: { entity: {} } },
+  { name: "probe_sensor_1", label: "Probe 2 sensor (optional)",        selector: { entity: {} } },
+  { name: "probe_sensor_2", label: "Probe 3 sensor (optional)",        selector: { entity: {} } },
+  { name: "entry_id",       label: "Entry ID (optional, for multi-instance)", selector: { text: {} } },
+];
 
 class CookPredictorCardEditor extends HTMLElement {
   setConfig(config) {
     this._config = { ...config };
-    this._render();
+    this._updateForm();
   }
 
   set hass(hass) {
     this._hass = hass;
-    // Push hass to all entity pickers already in the DOM without re-rendering.
-    this.querySelectorAll("ha-entity-picker").forEach((el) => { el.hass = hass; });
+    this._updateForm();
   }
 
-  _emit() {
-    this.dispatchEvent(
-      new CustomEvent("config-changed", {
-        detail: { config: { ...this._config } },
-        bubbles: true,
-        composed: true,
-      })
-    );
-  }
-
-  _render() {
-    const cfg = this._config || {};
+  // Flatten probe_sensors array → individual schema keys
+  _toFormData(cfg) {
     const ps = cfg.probe_sensors || [];
+    return {
+      entity:         cfg.entity         || "",
+      eta_entity:     cfg.eta_entity     || "",
+      ambient_sensor: cfg.ambient_sensor || "",
+      probe_sensor_0: ps[0]              || "",
+      probe_sensor_1: ps[1]              || "",
+      probe_sensor_2: ps[2]              || "",
+      entry_id:       cfg.entry_id       || "",
+    };
+  }
 
-    this.innerHTML = `
-      <div style="padding:16px;display:flex;flex-direction:column;gap:10px;">
-        <ha-entity-picker id="ed-entity"
-          label="Time remaining entity *"
-          allow-custom-entity>
-        </ha-entity-picker>
-        <ha-entity-picker id="ed-eta-entity"
-          label="ETA entity (optional)"
-          allow-custom-entity>
-        </ha-entity-picker>
-        <ha-entity-picker id="ed-ambient-sensor"
-          label="Ambient sensor (optional)"
-          allow-custom-entity>
-        </ha-entity-picker>
-        <ha-entity-picker id="ed-probe-0"
-          label="Probe 1 sensor (optional)"
-          allow-custom-entity>
-        </ha-entity-picker>
-        <ha-entity-picker id="ed-probe-1"
-          label="Probe 2 sensor (optional)"
-          allow-custom-entity>
-        </ha-entity-picker>
-        <ha-entity-picker id="ed-probe-2"
-          label="Probe 3 sensor (optional)"
-          allow-custom-entity>
-        </ha-entity-picker>
-        <div>
-          <label style="display:block;font-size:0.82em;color:var(--secondary-text-color);margin-bottom:4px;">
-            Entry ID (only needed when multiple instances are installed)
-          </label>
-          <input id="ed-entry-id" type="text" value="${cfg.entry_id || ""}"
-            placeholder="Leave empty for single instance"
-            style="width:100%;box-sizing:border-box;padding:9px 11px;
-                   border:1px solid var(--divider-color);border-radius:6px;
-                   font-size:0.95em;background:var(--card-background-color);
-                   color:var(--primary-text-color);" />
-        </div>
-      </div>`;
+  // Rebuild card config from flat form data
+  _fromFormData(data) {
+    const cfg = {};
+    if (data.entity)         cfg.entity         = data.entity;
+    if (data.eta_entity)     cfg.eta_entity     = data.eta_entity;
+    if (data.ambient_sensor) cfg.ambient_sensor = data.ambient_sensor;
+    const probes = [data.probe_sensor_0, data.probe_sensor_1, data.probe_sensor_2].filter(Boolean);
+    if (probes.length)       cfg.probe_sensors  = probes;
+    if (data.entry_id)       cfg.entry_id       = data.entry_id;
+    return cfg;
+  }
 
-    // Set .value on entity pickers via JS (LitElement property, not HTML attribute)
-    this.querySelector("#ed-entity").value        = cfg.entity         || "";
-    this.querySelector("#ed-eta-entity").value    = cfg.eta_entity     || "";
-    this.querySelector("#ed-ambient-sensor").value = cfg.ambient_sensor || "";
-    this.querySelector("#ed-probe-0").value = ps[0] || "";
-    this.querySelector("#ed-probe-1").value = ps[1] || "";
-    this.querySelector("#ed-probe-2").value = ps[2] || "";
+  _updateForm() {
+    if (!this._hass || !this._config) return;
 
-    // Push hass if it arrived before render
-    if (this._hass) {
-      this.querySelectorAll("ha-entity-picker").forEach((el) => { el.hass = this._hass; });
+    // Create ha-form once; update its properties on subsequent calls
+    let form = this.querySelector("ha-form");
+    if (!form) {
+      form = document.createElement("ha-form");
+      form.computeLabel = (schema) => schema.label || schema.name;
+      form.addEventListener("value-changed", (e) => {
+        this._config = this._fromFormData(e.detail.value);
+        this.dispatchEvent(new CustomEvent("config-changed", {
+          detail: { config: { ...this._config } },
+          bubbles: true,
+          composed: true,
+        }));
+      });
+      this.appendChild(form);
     }
 
-    // Wire entity pickers
-    const wireEntityPicker = (id, applyFn) => {
-      const el = this.querySelector(`#${id}`);
-      if (!el) return;
-      el.addEventListener("value-changed", (e) => {
-        applyFn(e.detail.value || "");
-        this._emit();
-      });
-    };
-
-    wireEntityPicker("ed-entity", (v) => {
-      this._config = { ...this._config, entity: v };
-    });
-    wireEntityPicker("ed-eta-entity", (v) => {
-      const c = { ...this._config };
-      if (v) c.eta_entity = v; else delete c.eta_entity;
-      this._config = c;
-    });
-    wireEntityPicker("ed-ambient-sensor", (v) => {
-      const c = { ...this._config };
-      if (v) c.ambient_sensor = v; else delete c.ambient_sensor;
-      this._config = c;
-    });
-    [0, 1, 2].forEach((i) => {
-      wireEntityPicker(`ed-probe-${i}`, (v) => {
-        const arr = [...(this._config.probe_sensors || [null, null, null])];
-        arr[i] = v || null;
-        const filtered = arr.filter(Boolean);
-        const c = { ...this._config };
-        if (filtered.length) c.probe_sensors = filtered;
-        else delete c.probe_sensors;
-        this._config = c;
-      });
-    });
-
-    // Wire entry_id plain input
-    this.querySelector("#ed-entry-id").addEventListener("change", (e) => {
-      const c = { ...this._config };
-      if (e.target.value) c.entry_id = e.target.value;
-      else delete c.entry_id;
-      this._config = c;
-      this._emit();
-    });
+    form.hass   = this._hass;
+    form.schema = EDITOR_SCHEMA;
+    form.data   = this._toFormData(this._config);
   }
 }
 

@@ -20,6 +20,7 @@ fi
 MANIFEST="custom_components/probe_ability/manifest.json"
 INIT="custom_components/probe_ability/__init__.py"
 CARD="custom_components/probe_ability/www/probe-ability-card.js"
+CARD_OLD="www/probe-ability/probe-ability-card.js"
 
 # Update manifest.json
 sed -i '' "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" "$MANIFEST"
@@ -31,12 +32,16 @@ sed -i '' "s/__version__ = \"[^\"]*\"/__version__ = \"$VERSION\"/" "$INIT"
 sed -i '' "s/const CARD_VERSION = \"[^\"]*\"/const CARD_VERSION = \"$VERSION\"/" "$CARD"
 sed -i '' "s/\* Probe-ability Card v[0-9][^ ]*/\* Probe-ability Card v$VERSION/" "$CARD"
 
+# Keep legacy www/probe-ability/ in sync (served at /local/probe-ability/)
+cp "$CARD" "$CARD_OLD"
+
 echo "Updated to $VERSION in:"
 echo "  $MANIFEST"
 echo "  $INIT"
 echo "  $CARD"
+echo "  $CARD_OLD (legacy copy)"
 
-git add "$MANIFEST" "$INIT" "$CARD"
+git add "$MANIFEST" "$INIT" "$CARD" "$CARD_OLD"
 git commit -m "Bump version to $VERSION"
 git tag "v$VERSION"
 

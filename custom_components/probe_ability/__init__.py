@@ -8,6 +8,10 @@ import logging
 import time
 from pathlib import Path
 
+from homeassistant.util import dt as dt_util
+
+_BLUETOOTH_GRACE_SECONDS = 60  # Allow up to this long for a Bluetooth sensor to recover
+
 import voluptuous as vol
 
 from homeassistant.components.http import StaticPathConfig
@@ -278,18 +282,39 @@ class CookMonitor:
             sensors.append(s3)
         return sensors
 
+    def _sensor_recently_valid(self, state) -> bool:
+        """True if the sensor transitioned to its current (bad) state recently.
+
+        Bluetooth sensors can drop to unavailable for a few seconds during
+        normal operation.  If the state changed less than _BLUETOOTH_GRACE_SECONDS
+        ago we allow the start to proceed rather than blocking the cook.
+        """
+        age = (dt_util.utcnow() - state.last_changed).total_seconds()
+        return age < _BLUETOOTH_GRACE_SECONDS
+
     def _probe_sensor_ok(self, probe_index: int) -> bool:
         """True if the sensor for this probe exists and is reporting a non-zero numeric value.
 
         A reading of exactly 0.0 is treated as invalid — disconnected probes
         report a static 0 rather than "unavailable". Real probes never settle
         permanently at 0; frozen meat reads negative and room-temp reads positive.
+
+        Brief Bluetooth dropouts (unavailable/unknown for < 60 s) are allowed.
         """
         sensors = self._probe_sensors()
         if probe_index >= len(sensors):
             return False
-        state = self.hass.states.get(sensors[probe_index])
-        if not state or state.state in ("unavailable", "unknown"):
+        entity_id = sensors[probe_index]
+        state = self.hass.states.get(entity_id)
+        if not state:
+            return False
+        if state.state in ("unavailable", "unknown"):
+            if self._sensor_recently_valid(state):
+                _LOGGER.warning(
+                    "Probe %d sensor %s is temporarily %s — allowing start (Bluetooth grace period)",
+                    probe_index + 1, entity_id, state.state,
+                )
+                return True
             return False
         try:
             return float(state.state) != 0.0
@@ -297,16 +322,23 @@ class CookMonitor:
             return False
 
     def _ambient_sensor_ok(self) -> bool:
-        """True if the ambient sensor exists and is reporting a non-zero numeric value."""
+        """True if the ambient sensor exists and is reporting a non-zero numeric value.
+
+        Brief Bluetooth dropouts (unavailable/unknown for < 60 s) are allowed.
+        """
         entity_id = self.entry.data[CONF_AMBIENT_SENSOR]
         state = self.hass.states.get(entity_id)
         if not state:
             _LOGGER.warning("Ambient sensor %s not found in HA states", entity_id)
             return False
         if state.state in ("unavailable", "unknown"):
-            _LOGGER.warning(
-                "Ambient sensor %s is %s", entity_id, state.state
-            )
+            if self._sensor_recently_valid(state):
+                _LOGGER.warning(
+                    "Ambient sensor %s is temporarily %s — allowing start (Bluetooth grace period)",
+                    entity_id, state.state,
+                )
+                return True
+            _LOGGER.warning("Ambient sensor %s is %s", entity_id, state.state)
             return False
         try:
             val = float(state.state)

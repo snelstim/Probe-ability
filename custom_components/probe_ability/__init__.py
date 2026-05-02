@@ -10,6 +10,7 @@ from pathlib import Path
 
 import voluptuous as vol
 
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP, Platform
 from homeassistant.core import Event, HomeAssistant, ServiceCall, callback
@@ -53,10 +54,13 @@ _URL_BASE = "/probe_ability"
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Register static files for the Lovelace card."""
-    for fname in ("probe-ability-card.js", "cook_presets.json", "probe-ability-icon.svg"):
-        fpath = _WWW_DIR / fname
-        if fpath.exists():
-            hass.http.register_static_path(f"{_URL_BASE}/{fname}", str(fpath), cache_headers=True)
+    paths = [
+        StaticPathConfig(f"{_URL_BASE}/{fname}", str(_WWW_DIR / fname), True)
+        for fname in ("probe-ability-card.js", "cook_presets.json", "probe-ability-icon.svg")
+        if (_WWW_DIR / fname).exists()
+    ]
+    if paths:
+        await hass.http.async_register_static_paths(paths)
     return True
 
 

@@ -298,13 +298,30 @@ class CookMonitor:
 
     def _ambient_sensor_ok(self) -> bool:
         """True if the ambient sensor exists and is reporting a non-zero numeric value."""
-        state = self.hass.states.get(self.entry.data[CONF_AMBIENT_SENSOR])
-        if not state or state.state in ("unavailable", "unknown"):
+        entity_id = self.entry.data[CONF_AMBIENT_SENSOR]
+        state = self.hass.states.get(entity_id)
+        if not state:
+            _LOGGER.warning("Ambient sensor %s not found in HA states", entity_id)
+            return False
+        if state.state in ("unavailable", "unknown"):
+            _LOGGER.warning(
+                "Ambient sensor %s is %s", entity_id, state.state
+            )
             return False
         try:
-            return float(state.state) != 0.0
+            val = float(state.state)
         except (ValueError, TypeError):
+            _LOGGER.warning(
+                "Ambient sensor %s has non-numeric state: %r", entity_id, state.state
+            )
             return False
+        if val == 0.0:
+            _LOGGER.warning(
+                "Ambient sensor %s is reporting 0 — probe may not be connected",
+                entity_id,
+            )
+            return False
+        return True
 
     # ── Lifecycle ────────────────────────────────────────────────────────
 

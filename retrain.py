@@ -30,8 +30,16 @@ Copying probe_ability exports from Home Assistant
 
 Using shared Supabase data
 --------------------------
-    export SUPABASE_SERVICE_KEY="eyJ..."   # service_role key from Supabase dashboard
-    python retrain.py
+    Easiest: put your key in a .env file in this directory (already in .gitignore):
+        echo 'SUPABASE_SERVICE_KEY=eyJ...' >> .env
+    Then just run:
+        python retrain.py
+
+    Or pass it inline:
+        python retrain.py --supabase-key "eyJ..."
+
+    Or export it in the shell for the session:
+        export SUPABASE_SERVICE_KEY="eyJ..."
 
 Requirements
 ------------
@@ -52,6 +60,16 @@ import struct
 import sys
 import warnings
 from pathlib import Path
+
+# Load .env file from the project root (if present) so SUPABASE_SERVICE_KEY
+# is picked up automatically without needing to export it in the shell.
+_env_file = Path(__file__).parent / ".env"
+if _env_file.exists():
+    for _line in _env_file.read_text().splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _k, _, _v = _line.partition("=")
+            os.environ.setdefault(_k.strip(), _v.strip())
 
 warnings.filterwarnings("ignore")
 
@@ -138,6 +156,11 @@ _PRESET_TARGETS: dict[str, dict[str, float]] = {
                 "pulled": 96.0, "fall_apart": 96.0, "meater_recommends": 70.0},
 }
 _PRESET_TARGET_DEFAULT = 70.0
+
+# Ambient readings above this are physically impossible for any cooking
+# appliance and indicate a sensor fault.  Readings are dropped per-row;
+# a whole cook is skipped if too few valid readings survive.
+_MAX_AMBIENT_C = 500.0
 
 
 def _preset_to_target(category: str, preset: str) -> float:
@@ -366,9 +389,14 @@ def load_meater_exports(data_dir: str) -> list[dict]:
             continue
 
         try:
-            ts       = [float(r["timestamp"])        for r in rows]
-            internal = [float(r["internal_temp_c"])  for r in rows]
-            ambient  = [float(r["ambient_temp_c"])   for r in rows]
+            # Filter out rows with invalid ambient readings (sensor faults)
+            valid_rows = [
+                r for r in rows
+                if 0 < float(r["ambient_temp_c"]) <= _MAX_AMBIENT_C
+            ]
+            ts       = [float(r["timestamp"])       for r in valid_rows]
+            internal = [float(r["internal_temp_c"]) for r in valid_rows]
+            ambient  = [float(r["ambient_temp_c"])  for r in valid_rows]
         except (KeyError, ValueError):
             skipped += 1
             continue
@@ -488,11 +516,14 @@ def load_pa_exports(data_dir: str, presets: dict | None) -> list[dict]:
                 if len(row) < 3:
                     continue
                 t_int = float(row[col["internal_temp_c"]])
+                t_amb = float(row[col["ambient_temp_c"]])
                 if t_int <= 0:  # probe removed / disconnected
+                    continue
+                if not (0 < t_amb <= _MAX_AMBIENT_C):  # sensor fault
                     continue
                 elapsed_s.append(float(row[col["elapsed_s"]]))
                 internal.append(t_int)
-                ambient.append(float(row[col["ambient_temp_c"]]))
+                ambient.append(t_amb)
         except (KeyError, ValueError, IndexError):
             skipped += 1
             skip_reasons["parse_error"] = skip_reasons.get("parse_error", 0) + 1
@@ -594,8 +625,8 @@ def load_supabase_exports(
             skipped += 1
             continue
 
-        # Filter out zero / invalid probe readings
-        valid = [(e, i, a) for e, i, a in triples if i > 0]
+        # Filter out zero / invalid probe readings and faulty ambient values
+        valid = [(e, i, a) for e, i, a in triples if i > 0 and 0 < a <= _MAX_AMBIENT_C]
         if len(valid) < 5:
             skipped += 1
             continue

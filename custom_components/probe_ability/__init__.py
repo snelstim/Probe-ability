@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-__version__ = "0.7.1"
+__version__ = "0.7.2"
 
 import logging
 import time
@@ -20,12 +20,13 @@ from homeassistant.const import EVENT_HOMEASSISTANT_STOP, Platform
 from homeassistant.core import Event, HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 from homeassistant.helpers.storage import Store
 
 from .const import (
     ATTR_COOK_NAME,
     ATTR_TARGET_TEMP,
+    AUTO_STOP_DELAY,
     CONF_AMBIENT_SENSOR,
     CONF_EXPORT_DATA,
     CONF_INTERNAL_SENSOR,
@@ -234,6 +235,8 @@ class CookMonitor:
         self.probe_target: list[float] = [DEFAULT_TARGET_TEMP] * probe_count
         self.probe_name: list[str] = [DEFAULT_COOK_NAME] * probe_count
         self._last_reading_ts: list[float] = [0.0] * probe_count
+        self._probe_disconnected_since: list[float | None] = [None] * probe_count
+        self._auto_stop_unsub: object | None = None
 
         # Runtime mode — set when a cook is started
         self.probe_mode: str = PROBE_MODE_COMBINED
@@ -355,6 +358,57 @@ class CookMonitor:
             return False
         return True
 
+    def _update_probe_disconnect_timestamps(self) -> None:
+        """Track when each active probe first goes missing.
+
+        Called after every sensor state-change event.  _probe_sensor_ok() already
+        enforces the Bluetooth grace window, so a False result means the probe
+        has been truly gone for >= _BLUETOOTH_GRACE_SECONDS.
+        """
+        now = time.monotonic()
+        for i in range(len(self.predictors)):
+            if not self.probe_active[i]:
+                self._probe_disconnected_since[i] = None
+                continue
+            if self._probe_sensor_ok(i):
+                self._probe_disconnected_since[i] = None
+            elif self._probe_disconnected_since[i] is None:
+                _LOGGER.debug("Probe %d gone — auto-stop watch started", i + 1)
+                self._probe_disconnected_since[i] = now
+
+    @callback
+    def _check_auto_stop(self, _now=None) -> None:
+        """Auto-stop if all active probes have been disconnected long enough."""
+        self._auto_stop_unsub = None
+        if not self.active:
+            return
+        active_indices = [i for i, a in enumerate(self.probe_active) if a]
+        if not active_indices:
+            return
+        if not all(self._probe_disconnected_since[i] is not None for i in active_indices):
+            return
+        probe_labels = ", ".join(f"probe {i + 1}" for i in active_indices)
+        _LOGGER.warning(
+            "Auto-stopping cook '%s' — all probes (%s) have been disconnected",
+            self.cook_name,
+            probe_labels,
+        )
+        self.hass.async_create_task(
+            self.hass.services.async_call(
+                "persistent_notification",
+                "create",
+                {
+                    "title": "BBQ Cook Auto-Stopped",
+                    "message": (
+                        f"Cook \"{self.cook_name}\" was automatically stopped because "
+                        f"all probes ({probe_labels}) have been disconnected."
+                    ),
+                    "notification_id": f"probe_ability_auto_stop_{self.entry.entry_id}",
+                },
+            )
+        )
+        self.stop_cook()
+
     # ── Lifecycle ────────────────────────────────────────────────────────
 
     async def async_load(self) -> None:
@@ -468,6 +522,10 @@ class CookMonitor:
         probe_index=None: stop all probes.
         probe_index=0/1/2: stop only that probe (individual mode).
         """
+        if self._auto_stop_unsub is not None:
+            self._auto_stop_unsub()
+            self._auto_stop_unsub = None
+
         indices = (
             list(range(len(self.predictors)))
             if probe_index is None
@@ -532,6 +590,7 @@ class CookMonitor:
             self.predictors[i].reset()
             self.probe_name[i] = DEFAULT_COOK_NAME
             self._last_reading_ts[i] = 0.0
+            self._probe_disconnected_since[i] = None
 
         # Stop listening only when all probes are idle
         if not self.active:
@@ -745,6 +804,9 @@ class CookMonitor:
     @callback
     def async_stop(self) -> None:
         """Clean up on unload."""
+        if self._auto_stop_unsub is not None:
+            self._auto_stop_unsub()
+            self._auto_stop_unsub = None
         self._stop_listening()
 
     @callback
@@ -782,6 +844,12 @@ class CookMonitor:
 
             self.predictors[i].add_reading(now, internal, ambient)
             self._last_reading_ts[i] = now
+
+        self._update_probe_disconnect_timestamps()
+        if self._auto_stop_unsub is None and self.active:
+            self._auto_stop_unsub = async_call_later(
+                self.hass, AUTO_STOP_DELAY, self._check_auto_stop
+            )
 
         self._notify_entities()
 

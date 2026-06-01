@@ -27,6 +27,9 @@ DEFAULT_COOK_NAME = "Cook"
 # Minimum seconds between recorded readings (debounce)
 MIN_READING_INTERVAL = 30
 
+# Seconds after a sensor state event before evaluating auto-stop
+AUTO_STOP_DELAY = 5
+
 # Storage
 STORAGE_VERSION = 1
 

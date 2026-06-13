@@ -13,7 +13,7 @@ from homeassistant.const import UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONF_INTERNAL_SENSOR_2, CONF_INTERNAL_SENSOR_3, DOMAIN, PROBE_MODE_COMBINED
+from .const import CONF_INTERNAL_SENSOR_2, CONF_INTERNAL_SENSOR_3, CONF_TEMP_UNIT, DOMAIN, PROBE_MODE_COMBINED, TEMP_UNIT_CELSIUS
 
 
 async def async_setup_entry(
@@ -114,7 +114,11 @@ class CookPredictorSensorBase(SensorEntity):
         if self._probe_index >= len(self._monitor.predictors):
             return False
         if self._probe_index == 0:
-            return self._monitor.active   # True if any probe is running
+            # Primary sensor is always available so its attributes (temp_unit,
+            # probe_count, ml_available, etc.) are readable by the card even
+            # when no cook is running.  The card uses attrs.active to determine
+            # whether a cook is in progress, not this sensor's availability.
+            return True
         return self._monitor.probe_active[self._probe_index]
 
 
@@ -200,6 +204,9 @@ class CookTimeRemainingSensor(CookPredictorSensorBase):
             "probe_count": len(predictors),
             "probe_active": list(self._monitor.probe_active),
         }
+
+        if idx == 0:
+            attrs["temp_unit"] = self._entry.data.get(CONF_TEMP_UNIT, TEMP_UNIT_CELSIUS)
 
         # Always expose ML availability on the primary sensor so it's visible
         # in Developer Tools without needing an active cook.

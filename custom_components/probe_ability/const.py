@@ -33,6 +33,11 @@ AUTO_STOP_DELAY = 5
 # Storage
 STORAGE_VERSION = 1
 
+# Temperature display unit (°C or °F) — stored in config entry, set once at setup
+CONF_TEMP_UNIT = "temp_unit"
+TEMP_UNIT_CELSIUS = "C"
+TEMP_UNIT_FAHRENHEIT = "F"
+
 # Data export (fine-tuning / analysis)
 CONF_EXPORT_DATA = "export_cook_data"
 EXPORT_SUBDIR = "probe_ability_exports"

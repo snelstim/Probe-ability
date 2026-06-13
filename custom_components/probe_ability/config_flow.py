@@ -11,6 +11,9 @@ from homeassistant.helpers.selector import (
     BooleanSelector,
     EntitySelector,
     EntitySelectorConfig,
+    SelectOptionDict,
+    SelectSelector,
+    SelectSelectorConfig,
 )
 
 from .const import (
@@ -20,7 +23,10 @@ from .const import (
     CONF_INTERNAL_SENSOR_2,
     CONF_INTERNAL_SENSOR_3,
     CONF_SHARE_DATA,
+    CONF_TEMP_UNIT,
     DOMAIN,
+    TEMP_UNIT_CELSIUS,
+    TEMP_UNIT_FAHRENHEIT,
 )
 
 SETUP_SCHEMA = vol.Schema(
@@ -36,6 +42,12 @@ SETUP_SCHEMA = vol.Schema(
         ),
         vol.Optional(CONF_INTERNAL_SENSOR_3): EntitySelector(
             EntitySelectorConfig(domain="sensor", device_class="temperature")
+        ),
+        vol.Optional(CONF_TEMP_UNIT, default=TEMP_UNIT_CELSIUS): SelectSelector(
+            SelectSelectorConfig(options=[
+                SelectOptionDict(value=TEMP_UNIT_CELSIUS, label="Celsius (°C)"),
+                SelectOptionDict(value=TEMP_UNIT_FAHRENHEIT, label="Fahrenheit (°F)"),
+            ])
         ),
         vol.Optional(CONF_EXPORT_DATA, default=False): BooleanSelector(),
         vol.Optional(CONF_SHARE_DATA, default=False): BooleanSelector(),

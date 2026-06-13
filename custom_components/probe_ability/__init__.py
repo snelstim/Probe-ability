@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-__version__ = "0.7.2"
+__version__ = "0.8.0"
 
 import logging
 import time
@@ -48,6 +48,14 @@ from .const import (
     SUPABASE_URL,
 )
 from .predictor import CookPredictor
+
+
+def _to_celsius(value: float, unit: str) -> float:
+    """Normalize a temperature reading to °C."""
+    if unit in ("°F", "F", "fahrenheit"):
+        return (value - 32) * 5 / 9
+    return value
+
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -822,7 +830,8 @@ class CookMonitor:
             return
 
         try:
-            ambient = float(ambient_state.state)
+            ambient_unit = ambient_state.attributes.get("unit_of_measurement", "°C")
+            ambient = _to_celsius(float(ambient_state.state), ambient_unit)
         except (ValueError, TypeError):
             return
 
@@ -838,7 +847,8 @@ class CookMonitor:
                 continue
 
             try:
-                internal = float(internal_state.state)
+                internal_unit = internal_state.attributes.get("unit_of_measurement", "°C")
+                internal = _to_celsius(float(internal_state.state), internal_unit)
             except (ValueError, TypeError):
                 continue
 

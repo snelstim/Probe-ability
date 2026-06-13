@@ -76,10 +76,13 @@ The config flow is a one-time hardware setup. It does **not** ask for target tem
 | **Ambient sensor** | Yes | Ambient (oven/smoker/air) temperature sensor |
 | **Probe 2 sensor** | No | Second internal probe (optional) |
 | **Probe 3 sensor** | No | Third internal probe (optional) |
+| **Temperature unit** | No | Display unit for the card — Celsius (default) or Fahrenheit |
 | **Export cook data** | No | Save a CSV after every cook for local analysis/fine-tuning |
 | **Share anonymous cook data** | No | Opt-in: send completed cooks to improve the shared ML model (see [Anonymous data sharing](#anonymous-data-sharing)) |
 
 > **Tip:** All sensor entities must have the `temperature` device class. The entity selector in the config flow filters for this automatically.
+
+> **Temperature unit:** Choose **Fahrenheit** to have the card show all temperatures (targets, presets, current/ambient readings, pull temp) in °F. This is a display-only setting — internally everything is stored in Celsius, and probe readings are normalized to °C automatically based on each sensor's own `unit_of_measurement`, so a probe that reports in °F won't be double-converted. Change it any time via **⋮ → Reconfigure**.
 
 > **Tip:** Probe resolution matters. A probe that reports in 0.1°C increments gives the model much finer data to work with than one that rounds to the nearest 1°C — which produces a staircase signal that makes heating rate and deceleration features less accurate. If you have a choice of sensors, pick the higher-resolution one.
 

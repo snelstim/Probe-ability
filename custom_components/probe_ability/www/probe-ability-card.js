@@ -1,5 +1,5 @@
 /**
- * Probe-ability Card v0.7.1
+ * Probe-ability Card v0.8.0
  *
  * Custom Lovelace card for the Probe-ability integration.
  * Shows cook status, predictions, and lets you start/stop cooks.
@@ -23,7 +23,7 @@
  *   entry_id: <your_entry_id>                               (optional)
  */
 
-const CARD_VERSION = "0.7.1";
+const CARD_VERSION = "0.8.0";
 
 // ─── Preset data (loaded async from cook_presets.json) ───────────────────────
 //
@@ -79,7 +79,7 @@ function _makeCookName(category, cut, doneness) {
 // Step 2: cut <select> — appears after a category is chosen
 // Step 3: doneness <select> — appears after a cut is chosen (skipped for
 //         single-doneness cuts, which are auto-selected)
-function _presetSelector(idSuffix, slotState) {
+function _presetSelector(idSuffix, slotState, unit = "C") {
   const selStyle = `width:100%;box-sizing:border-box;padding:10px 12px;
     border:1px solid var(--divider-color);border-radius:8px;font-size:0.95em;
     background:var(--card-background-color);color:var(--primary-text-color);cursor:pointer;`;
@@ -133,7 +133,7 @@ function _presetSelector(idSuffix, slotState) {
   const donOpts = cutObj.doneness
     .map(
       (d) =>
-        `<option value="${d.id}"${d.id === doneness ? " selected" : ""}>${d.label} (${d.temp}°C)</option>`
+        `<option value="${d.id}"${d.id === doneness ? " selected" : ""}>${d.label} (${_toDisp(d.temp, unit)}${_unitLabel(unit)})</option>`
     )
     .join("");
   html += `<div style="margin-bottom:8px;">
@@ -163,6 +163,14 @@ const LOGO_SVG = `<svg width="32" height="32" viewBox="0 0 200 200" xmlns="http:
   </g>
 </svg>`;
 
+// ─── Temperature unit helpers ─────────────────────────────────────────────────
+
+function _cToF(c) { return Math.round(c * 9 / 5 + 32); }
+function _fToC(f) { return (f - 32) * 5 / 9; }
+function _toDisp(c, unit) { return unit === "F" ? _cToF(c) : c; }
+function _fromDisp(v, unit) { return unit === "F" ? _fToC(v) : v; }
+function _unitLabel(unit) { return unit === "F" ? "°F" : "°C"; }
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatTime(minutes) {
@@ -181,8 +189,10 @@ function etaFromMinutes(minutes) {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-function tempInput(id, value) {
-  return `<input id="${id}" type="number" value="${value}" min="30" max="200" step="0.5"
+function tempInput(id, value, unit = "C") {
+  const min = unit === "F" ? 86 : 30;
+  const max = unit === "F" ? 392 : 200;
+  return `<input id="${id}" type="number" value="${value}" min="${min}" max="${max}" step="${unit === "F" ? 1 : 0.5}"
     style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--divider-color);
            border-radius:8px;font-size:1em;background:var(--card-background-color);
            color:var(--primary-text-color);" />`;
@@ -286,10 +296,13 @@ class CookPredictorCard extends HTMLElement {
   _saveIdleFormState() {
     // Only the manual temp input needs capturing — category/cut/doneness are
     // persisted immediately in the event handlers.
+    const unit = this._tempUnit || "C";
     const saveTemp = (key, targetId) => {
       const el = this.querySelector(`#${targetId}`);
       if (!el) return;
-      const temp = parseFloat(el.value) || 74;
+      const dispVal = parseFloat(el.value);
+      if (isNaN(dispVal)) return;
+      const temp = _fromDisp(dispVal, unit);
       this._idleState[key] = { ...(this._idleState[key] || {}), temp };
     };
     saveTemp("combined", "cp-target-combined");
@@ -407,6 +420,14 @@ class CookPredictorCard extends HTMLElement {
     const probeMode = attrs.probe_mode || this._probeMode;
     const phase = attrs.phase || "idle";
     const isActive = attrs.active || false;
+    if (attrs.temp_unit) {
+      this._tempUnit = attrs.temp_unit;
+      try { localStorage.setItem("probe_ability_temp_unit", attrs.temp_unit); } catch (e) {}
+    } else {
+      this._tempUnit = this._tempUnit
+        || localStorage.getItem("probe_ability_temp_unit")
+        || "C";
+    }
 
     // Keep probe_count in sync while we have live attributes
     if (attrs.probe_count) this._cacheProbeCount(attrs.probe_count);
@@ -506,6 +527,7 @@ class CookPredictorCard extends HTMLElement {
   _renderIdleSingleProbe(probeIndex) {
     const slotKey = `sp-${probeIndex}`;
     const state = this._slotState(slotKey);
+    const unit = this._tempUnit || "C";
     this.innerHTML = `
       <ha-card>
         <div style="padding:20px;">
@@ -515,10 +537,10 @@ class CookPredictorCard extends HTMLElement {
           </div>
           <div>
             <div id="cp-form-${slotKey}">
-              ${_presetSelector(slotKey, state)}
+              ${_presetSelector(slotKey, state, unit)}
               <div style="margin-top:4px;">
-                <label style="display:block;font-size:0.85em;color:var(--secondary-text-color);margin-bottom:4px;">Target temperature (°C)</label>
-                ${tempInput(`cp-target-${slotKey}`, state.temp)}
+                <label style="display:block;font-size:0.85em;color:var(--secondary-text-color);margin-bottom:4px;">Target temperature (${_unitLabel(unit)})</label>
+                ${tempInput(`cp-target-${slotKey}`, _toDisp(state.temp, unit), unit)}
               </div>
             </div>
             <button id="cp-start-single"
@@ -536,13 +558,14 @@ class CookPredictorCard extends HTMLElement {
 
   _idleCombinedForm() {
     const state = this._slotState("combined");
+    const unit = this._tempUnit || "C";
     return `
       <div>
         <div id="cp-form-combined">
-          ${_presetSelector("combined", state)}
+          ${_presetSelector("combined", state, unit)}
           <div style="margin-top:4px;">
-            <label style="display:block;font-size:0.85em;color:var(--secondary-text-color);margin-bottom:4px;">Target temperature (°C)</label>
-            ${tempInput("cp-target-combined", state.temp)}
+            <label style="display:block;font-size:0.85em;color:var(--secondary-text-color);margin-bottom:4px;">Target temperature (${_unitLabel(unit)})</label>
+            ${tempInput("cp-target-combined", _toDisp(state.temp, unit), unit)}
           </div>
         </div>
         <button id="cp-start-combined"
@@ -556,6 +579,7 @@ class CookPredictorCard extends HTMLElement {
 
   _idleIndividualSlots(available) {
     const probeLabels = ["Probe 1", "Probe 2", "Probe 3"];
+    const unit = this._tempUnit || "C";
     let html = "";
     for (const i of available) {
       const state = this._slotState(i);
@@ -565,10 +589,10 @@ class CookPredictorCard extends HTMLElement {
             ${probeLabels[i] || `Probe ${i + 1}`}
           </div>
           <div id="cp-form-${i}">
-            ${_presetSelector(i, state)}
+            ${_presetSelector(i, state, unit)}
             <div style="margin-top:4px;">
-              <label style="display:block;font-size:0.8em;color:var(--secondary-text-color);margin-bottom:4px;">Target (°C)</label>
-              ${tempInput(`cp-target-${i}`, state.temp)}
+              <label style="display:block;font-size:0.8em;color:var(--secondary-text-color);margin-bottom:4px;">Target (${_unitLabel(unit)})</label>
+              ${tempInput(`cp-target-${i}`, _toDisp(state.temp, unit), unit)}
             </div>
           </div>
           <button id="cp-start-${i}"
@@ -589,13 +613,14 @@ class CookPredictorCard extends HTMLElement {
     const container = this.querySelector(`#cp-form-${idSuffix}`);
     if (!container) { this._render(); return; }
     const state = this._slotState(stateKey);
+    const unit = this._tempUnit || "C";
     container.innerHTML = `
-      ${_presetSelector(idSuffix, state)}
+      ${_presetSelector(idSuffix, state, unit)}
       <div style="margin-top:4px;">
         <label style="display:block;font-size:0.85em;color:var(--secondary-text-color);margin-bottom:4px;">
-          Target temperature (°C)
+          Target temperature (${_unitLabel(unit)})
         </label>
-        ${tempInput(`cp-target-${idSuffix}`, state.temp)}
+        ${tempInput(`cp-target-${idSuffix}`, _toDisp(state.temp, unit), unit)}
       </div>`;
     this._wireIdleSlot(stateKey, idSuffix, opts);
   }
@@ -650,6 +675,7 @@ class CookPredictorCard extends HTMLElement {
     // Doneness dropdown
     const targetEl = this.querySelector(`#cp-target-${idSuffix}`);
     const donEl = this.querySelector(`#cp-don-${idSuffix}`);
+    const unit = this._tempUnit || "C";
     if (donEl) {
       donEl.addEventListener("change", () => {
         if (!_presets) return;
@@ -657,16 +683,17 @@ class CookPredictorCard extends HTMLElement {
         const catObj = _presets.categories.find((c) => c.id === s.category);
         const cutObj = catObj?.cuts.find((c) => c.id === s.cut);
         const donObj = cutObj?.doneness.find((d) => d.id === donEl.value);
-        const temp = donObj?.temp ?? s.temp;
+        const temp = donObj?.temp ?? s.temp;  // always °C
         upd({ doneness: donEl.value, temp });
-        if (targetEl) targetEl.value = temp;
+        if (targetEl) targetEl.value = _toDisp(temp, unit);
       });
     }
 
-    // Manual temp input
+    // Manual temp input — store in °C internally
     if (targetEl) {
       targetEl.addEventListener("input", (e) => {
-        upd({ temp: parseFloat(e.target.value) || 74 });
+        const dispVal = parseFloat(e.target.value);
+        if (!isNaN(dispVal)) upd({ temp: _fromDisp(dispVal, unit) });
       });
     }
 
@@ -716,7 +743,7 @@ class CookPredictorCard extends HTMLElement {
           <div style="text-align:center;padding:16px 0;">
             <ha-icon icon="mdi:timer-sand" style="color:var(--secondary-text-color);--mdc-icon-size:40px;"></ha-icon>
             <div style="font-size:1em;color:var(--secondary-text-color);margin:10px 0 4px;">
-              Warming up… target <strong>${attrs.target_temp || "—"}°C</strong>
+              Warming up… target <strong>${attrs.target_temp != null ? `${_toDisp(attrs.target_temp, this._tempUnit || "C")}${_unitLabel(this._tempUnit || "C")}` : "—"}</strong>
             </div>
             <div style="font-size:0.85em;color:var(--secondary-text-color);margin-bottom:8px;">${msg}</div>
             <div style="background:var(--divider-color);border-radius:4px;height:6px;overflow:hidden;">
@@ -784,12 +811,13 @@ class CookPredictorCard extends HTMLElement {
     let centerPrimary = "—";
     let centerSecondary = "";
 
+    const _unit = this._tempUnit || "C";
     if (timerMode === "tempup") {
       const cur = attrs.current_temp;
       const tgt = attrs.target_temp;
       progress = (cur != null && tgt > 0) ? Math.min(cur / tgt, 1) : 0;
-      centerPrimary = cur != null ? `${cur}°C` : "—";
-      centerSecondary = tgt ? `of ${tgt}°C` : "";
+      centerPrimary = cur != null ? `${_toDisp(cur, _unit)}${_unitLabel(_unit)}` : "—";
+      centerSecondary = tgt ? `of ${_toDisp(tgt, _unit)}${_unitLabel(_unit)}` : "";
     } else {
       // countdown: ring fills as time elapses
       if (timeRemaining != null) {
@@ -857,7 +885,7 @@ class CookPredictorCard extends HTMLElement {
               </div>
             </div>
             <div style="text-align:right;font-size:0.8em;color:var(--secondary-text-color);line-height:1.6;">
-              <div>${attrs.target_temp || "?"}°C</div>
+              <div>${attrs.target_temp != null ? `${_toDisp(attrs.target_temp, _unit)}${_unitLabel(_unit)}` : "?"}</div>
               ${!shouldPull && confDots
                 ? `<div style="letter-spacing:2px;">${confDots}${modelBadge}</div>`
                 : ""}
@@ -910,8 +938,8 @@ class CookPredictorCard extends HTMLElement {
                   Remove from heat now!
                 </div>
                 <div style="font-size:0.8em;color:var(--secondary-text-color);margin-top:3px;">
-                  Carryover cooking will bring it to ${attrs.target_temp}°C.
-                  Pull temperature: ${pullTemp}°C.
+                  Carryover cooking will bring it to ${_toDisp(attrs.target_temp, _unit)}${_unitLabel(_unit)}.
+                  Pull temperature: ${_toDisp(pullTemp, _unit)}${_unitLabel(_unit)}.
                 </div>
               </div>
             </div>` : ""}
@@ -936,7 +964,7 @@ class CookPredictorCard extends HTMLElement {
           <!-- Rate -->
           ${attrs.rate_c_per_minute != null
             ? `<div style="text-align:center;font-size:0.82em;color:var(--secondary-text-color);margin-top:8px;">
-                Rate: ${attrs.rate_c_per_minute.toFixed(2)} °C/min
+                Rate: ${_unit === "F" ? (attrs.rate_c_per_minute * 9/5).toFixed(2) : attrs.rate_c_per_minute.toFixed(2)} ${_unitLabel(_unit)}/min
                 ${phase === "stall" ? '<span style="color:var(--error-color);"> (stalled)</span>' : ""}
                </div>`
             : ""}
@@ -1029,10 +1057,10 @@ class CookPredictorCard extends HTMLElement {
         contentBlock = `
           <div style="padding:8px 0 0;">
             <div id="cp-form-idle-${i}">
-              ${_presetSelector(`idle-${i}`, idleState)}
+              ${_presetSelector(`idle-${i}`, idleState, this._tempUnit || "C")}
               <div style="margin-top:4px;">
-                <label style="display:block;font-size:0.8em;color:var(--secondary-text-color);margin-bottom:4px;">Target (°C)</label>
-                ${tempInput(`cp-target-idle-${i}`, idleState.temp)}
+                <label style="display:block;font-size:0.8em;color:var(--secondary-text-color);margin-bottom:4px;">Target (${_unitLabel(this._tempUnit || "C")})</label>
+                ${tempInput(`cp-target-idle-${i}`, _toDisp(idleState.temp, this._tempUnit || "C"), this._tempUnit || "C")}
               </div>
             </div>
           </div>`;
@@ -1064,7 +1092,7 @@ class CookPredictorCard extends HTMLElement {
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
               <ha-icon icon="mdi:timer-sand" style="color:var(--warning-color);--mdc-icon-size:22px;flex-shrink:0;"></ha-icon>
               <span style="font-size:0.85em;color:var(--secondary-text-color);">
-                Warming up… target <strong>${pd.targetTemp || "—"}°C</strong>
+                Warming up… target <strong>${pd.targetTemp != null ? `${_toDisp(pd.targetTemp, this._tempUnit || "C")}${_unitLabel(this._tempUnit || "C")}` : "—"}</strong>
               </span>
             </div>
 
@@ -1095,10 +1123,10 @@ class CookPredictorCard extends HTMLElement {
             <div style="display:flex;justify-content:space-between;margin-top:8px;
                         font-size:0.8em;color:var(--secondary-text-color);">
               ${pd.currentTemp != null
-                ? `<span>Internal: <strong>${pd.currentTemp}°C</strong></span>`
+                ? `<span>Internal: <strong>${_toDisp(pd.currentTemp, this._tempUnit || "C")}${_unitLabel(this._tempUnit || "C")}</strong></span>`
                 : "<span></span>"}
               ${ambientTemp != null
-                ? `<span>Ambient: <strong>${ambientTemp}°C</strong></span>`
+                ? `<span>Ambient: <strong>${_toDisp(ambientTemp, this._tempUnit || "C")}${_unitLabel(this._tempUnit || "C")}</strong></span>`
                 : ""}
             </div>
           </div>`;
@@ -1120,7 +1148,7 @@ class CookPredictorCard extends HTMLElement {
               Target reached!
             </div>
             ${pd.currentTemp != null
-              ? `<div style="font-size:0.8em;color:var(--secondary-text-color);">${pd.currentTemp}°C</div>`
+              ? `<div style="font-size:0.8em;color:var(--secondary-text-color);">${_toDisp(pd.currentTemp, this._tempUnit || "C")}${_unitLabel(this._tempUnit || "C")}</div>`
               : ""}
           </div>`;
         actionBlock = `
@@ -1186,8 +1214,8 @@ class CookPredictorCard extends HTMLElement {
             <div style="margin-top:10px;">
               <div style="display:flex;justify-content:space-between;
                           font-size:0.8em;color:var(--secondary-text-color);margin-bottom:3px;">
-                <span><strong style="color:var(--primary-text-color);">${pd.currentTemp}°C</strong></span>
-                <span>${pd.targetTemp}°C</span>
+                <span><strong style="color:var(--primary-text-color);">${_toDisp(pd.currentTemp, this._tempUnit || "C")}${_unitLabel(this._tempUnit || "C")}</strong></span>
+                <span>${_toDisp(pd.targetTemp, this._tempUnit || "C")}${_unitLabel(this._tempUnit || "C")}</span>
               </div>
               <div style="background:var(--divider-color);border-radius:4px;height:5px;overflow:hidden;">
                 <div style="background:${ringColor};height:100%;width:${tempPct}%;
@@ -1198,13 +1226,13 @@ class CookPredictorCard extends HTMLElement {
           <div style="display:flex;justify-content:space-between;margin-top:8px;
                       font-size:0.78em;color:var(--secondary-text-color);">
             <span>${pd.ratePerMinute != null
-              ? `Rate: ${pd.ratePerMinute.toFixed(2)}°C/min`
+              ? `Rate: ${(this._tempUnit === "F" ? pd.ratePerMinute * 9/5 : pd.ratePerMinute).toFixed(2)}${_unitLabel(this._tempUnit || "C")}/min`
               : ""}</span>
             <span>${eta ? `ETA: ${eta}` : ""}</span>
           </div>
           ${ambientTemp != null ? `
             <div style="font-size:0.78em;color:var(--secondary-text-color);margin-top:2px;">
-              Ambient: ${ambientTemp}°C
+              Ambient: ${_toDisp(ambientTemp, this._tempUnit || "C")}${_unitLabel(this._tempUnit || "C")}
             </div>` : ""}
 
           ${shouldPull ? `
@@ -1218,7 +1246,7 @@ class CookPredictorCard extends HTMLElement {
                   Remove from heat now!
                 </div>
                 <div style="font-size:0.73em;color:var(--secondary-text-color);margin-top:1px;">
-                  Carryover will bring it to ${pd.targetTemp}°C. Pull temp: ${pd.pullTemp}°C.
+                  Carryover will bring it to ${_toDisp(pd.targetTemp, this._tempUnit || "C")}${_unitLabel(this._tempUnit || "C")}. Pull temp: ${_toDisp(pd.pullTemp, this._tempUnit || "C")}${_unitLabel(this._tempUnit || "C")}.
                 </div>
               </div>
             </div>` : ""}
@@ -1266,7 +1294,7 @@ class CookPredictorCard extends HTMLElement {
                 ? `${probePresetName
                      ? `<div style="font-weight:500;color:var(--primary-text-color);">${probePresetName}</div>`
                      : ""}
-                   <div>${pd.targetTemp || "?"}°C${showPhaseDetail && confDots
+                   <div>${pd.targetTemp != null ? `${_toDisp(pd.targetTemp, this._tempUnit || "C")}${_unitLabel(this._tempUnit || "C")}` : "?"}${showPhaseDetail && confDots
                      ? `<span style="margin-left:6px;letter-spacing:2px;">${confDots}</span>${indivModelBadge}`
                      : ""}</div>`
                 : `<div>Not started</div>`}
@@ -1365,11 +1393,12 @@ class CookPredictorCard extends HTMLElement {
 
     if (temps.length === 0) return "";
 
+    const _unit = this._tempUnit || "C";
     const cells = temps.map(
       (t) => `
         <div style="text-align:center;">
           <div style="font-size:0.75em;color:var(--secondary-text-color);">${t.label}</div>
-          <div style="font-size:1.3em;font-weight:600;">${t.value}°C</div>
+          <div style="font-size:1.3em;font-weight:600;">${_toDisp(t.value, _unit)}${_unitLabel(_unit)}</div>
         </div>`
     ).join("");
 

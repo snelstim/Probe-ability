@@ -1,5 +1,5 @@
 /**
- * Probe-ability Card v0.8.0
+ * Probe-ability Card v0.8.1
  *
  * Custom Lovelace card for the Probe-ability integration.
  * Shows cook status, predictions, and lets you start/stop cooks.
@@ -23,7 +23,7 @@
  *   entry_id: <your_entry_id>                               (optional)
  */
 
-const CARD_VERSION = "0.8.0";
+const CARD_VERSION = "0.8.1";
 
 // ─── Preset data (loaded async from cook_presets.json) ───────────────────────
 //
@@ -370,19 +370,23 @@ class CookPredictorCard extends HTMLElement {
   // available and reporting a numeric value.
   // If probe_sensors is not configured in the card config, all probes are
   // assumed available (backend validation will catch real problems).
-  _availableProbeIndices(totalCount) {
+  // entityProbeIndex: the integration probe index that probe_sensors[0] maps to.
+  // Needed when a card shows a single non-first probe — e.g. a card whose
+  // entity is the probe-2 time_remaining sensor has entityProbeIndex=1, so
+  // probe_sensors[0] maps to integration probe 1, not probe 0.
+  _availableProbeIndices(totalCount, entityProbeIndex = 0) {
     if (!this._probeSensors || !this._probeSensors.length) {
       return Array.from({ length: totalCount }, (_, i) => i);
     }
     return this._probeSensors
       .slice(0, totalCount)
-      .map((id, i) => ({ id, i }))
+      .map((id, i) => ({ id, idx: i + entityProbeIndex }))
       .filter(({ id }) => {
         const s = this._hass && this._hass.states[id];
         return s && s.state !== "unavailable" && s.state !== "unknown"
                && !isNaN(parseFloat(s.state)) && parseFloat(s.state) !== 0;
       })
-      .map(({ i }) => i);
+      .map(({ idx }) => idx);
   }
 
   // Persistent display mode for the SVG timer (countdown vs temp-up)
@@ -455,7 +459,10 @@ class CookPredictorCard extends HTMLElement {
     // attrs.probe_count is absent while idle (sensor unavailable = no attrs),
     // and _cachedProbeCount defaults to 1 which causes the wrong branch.
     const probeCount = this._probeSensors.length || attrs.probe_count || this._cachedProbeCount;
-    const available = this._availableProbeIndices(probeCount);
+    // probe_index tells us which integration probe this card's entity represents.
+    // probe_sensors[0] maps to that probe, probe_sensors[1] to the next, etc.
+    const entityProbeIndex = attrs.probe_index ?? 0;
+    const available = this._availableProbeIndices(probeCount, entityProbeIndex);
 
     // No sensors at all, or ambient unavailable → inform the user, no start button
     if (!this._ambientOk() || available.length === 0) {
@@ -988,10 +995,11 @@ class CookPredictorCard extends HTMLElement {
   _renderActiveIndividual(state, attrs) {
     const probeCount = attrs.probe_count || this._cachedProbeCount;
     const probeActiveList = attrs.probe_active || Array(probeCount).fill(false);
+    const entityProbeIndex = attrs.probe_index ?? 0;
 
     // Which probe indices have a working sensor right now (non-zero reading).
     // Used to suppress idle setup slots for probes that aren't plugged in.
-    const availableSet = new Set(this._availableProbeIndices(probeCount));
+    const availableSet = new Set(this._availableProbeIndices(probeCount, entityProbeIndex));
 
     // Gather per-probe data — probes 2/3 use dedicated attrs written by sensor.py
     const probeData = [];

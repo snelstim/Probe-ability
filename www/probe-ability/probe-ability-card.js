@@ -1,5 +1,5 @@
 /**
- * Probe-ability Card v0.8.2
+ * Probe-ability Card v0.9.0
  *
  * Custom Lovelace card for the Probe-ability integration.
  * Shows cook status, predictions, and lets you start/stop cooks.
@@ -23,7 +23,193 @@
  *   entry_id: <your_entry_id>                               (optional)
  */
 
-const CARD_VERSION = "0.8.2";
+const CARD_VERSION = "0.9.0";
+
+// ─── Localisation ────────────────────────────────────────────────────────────
+//
+// Custom cards can't read Home Assistant's backend translations, so the card
+// ships its own string table.  To add a language, add an entry to I18N below
+// (copy the "en" block and translate the values) — missing keys/languages fall
+// back to English automatically.  Preset labels (cut / doneness names) are
+// localised separately in cook_presets.json, NOT here — see _displayLabel().
+//
+// See docs/TRANSLATIONS.md for the full guide.
+
+const I18N = {
+  en: {
+    start_cook: "Start Cook",
+    start_probe: "Start Probe {n}",
+    cancel_cook: "Cancel Cook",
+    stop_cook: "Stop Cook",
+    cancel_probe: "Cancel Probe {n}",
+    new_cook_probe: "New Cook (Probe {n})",
+    stop_probe: "Stop Probe {n}",
+    new_cook: "New Cook",
+    combined: "🔗 Combined",
+    individual_toggle: "⚡ Individual",
+    mode_combined: "Combined",
+    mode_individual: "Individual",
+    individual_badge: "Individual",
+    loading_presets: "Loading presets…",
+    select_cut: "— Select cut —",
+    select_doneness: "— Select doneness —",
+    target_temp_label: "Target temperature ({unit})",
+    target_label: "Target ({unit})",
+    no_probe_sensors: "No probe sensors available",
+    no_probe_sensors_hint: "Check that your thermometer probes are connected and visible in Home Assistant.",
+    warming_up_target: "Warming up… target",
+    collecting_data: "Collecting data ({count}/{needed})",
+    readings: "Readings: {count}/{needed}",
+    building_span: "Building data span…",
+    ready_at: "ready at {time}",
+    remaining: "remaining",
+    estimating: "estimating…",
+    tap_for_temp: "tap for temp",
+    tap_for_time: "tap for time",
+    done_at: "Done ~{eta}",
+    eta: "ETA: {eta}",
+    rate: "Rate: {rate} {unit}/min",
+    stalled: "(stalled)",
+    ambient: "Ambient",
+    internal: "Internal",
+    probe_n: "Probe {n}",
+    of_temp: "of {temp}",
+    remove_from_heat: "Remove from heat",
+    remove_from_heat_now: "Remove from heat now!",
+    carryover_full: "Carryover cooking will bring it to {temp}.",
+    pull_temp: "Pull temperature: {temp}.",
+    carryover_short: "Carryover will bring it to {temp}.",
+    pull_temp_short: "Pull temp: {temp}.",
+    stall_detected: "Temperature stall detected",
+    stall_detail: "Time shown is the last stable estimate. It will resume updating when the temperature starts rising again.",
+    stall_short: "Stall — showing last stable estimate",
+    unreachable_detected: "Target cannot be reached",
+    unreachable_detail: "The ambient temperature has dropped below the target. Increase the heat to finish the cook.",
+    unreachable_short: "Ambient below target — increase the heat",
+    target_reached: "Target reached!",
+    cook_complete: "Cook Complete!",
+    target_temp_reached: "Target temperature reached.",
+    not_started: "Not started",
+    are_you_sure: "Are you sure?",
+    yes_cancel: "Yes, cancel",
+    yes_stop: "Yes, stop",
+    yes_new_cook: "Yes, new cook",
+    keep_cooking: "Keep cooking",
+    entity_not_found: "Entity not found: {entity}",
+    err_define_entity: "Please define an entity (time_remaining sensor)",
+    switch_to_temp: "Switch to temperature view",
+    switch_to_countdown: "Switch to countdown view",
+    hours_short: "h",
+    minutes_short: "m",
+    ed_entity: "Time remaining entity (required)",
+    ed_eta: "ETA entity (optional)",
+    ed_ambient: "Ambient sensor (optional)",
+    ed_probe1: "Probe 1 sensor (optional)",
+    ed_probe2: "Probe 2 sensor (optional)",
+    ed_probe3: "Probe 3 sensor (optional)",
+    ed_entry: "Entry ID (optional, for multi-instance)",
+  },
+  nl: {
+    start_cook: "Kook starten",
+    start_probe: "Probe {n} starten",
+    cancel_cook: "Kook annuleren",
+    stop_cook: "Kook stoppen",
+    cancel_probe: "Probe {n} annuleren",
+    new_cook_probe: "Nieuwe kook (probe {n})",
+    stop_probe: "Probe {n} stoppen",
+    new_cook: "Nieuwe kook",
+    combined: "🔗 Gecombineerd",
+    individual_toggle: "⚡ Individueel",
+    mode_combined: "Gecombineerd",
+    mode_individual: "Individueel",
+    individual_badge: "Individueel",
+    loading_presets: "Presets laden…",
+    select_cut: "— Kies stuk —",
+    select_doneness: "— Kies gaarheid —",
+    target_temp_label: "Doeltemperatuur ({unit})",
+    target_label: "Doel ({unit})",
+    no_probe_sensors: "Geen probe-sensoren beschikbaar",
+    no_probe_sensors_hint: "Controleer of je thermometerprobes zijn aangesloten en zichtbaar zijn in Home Assistant.",
+    warming_up_target: "Opwarmen… doel",
+    collecting_data: "Gegevens verzamelen ({count}/{needed})",
+    readings: "Metingen: {count}/{needed}",
+    building_span: "Gegevensbereik opbouwen…",
+    ready_at: "klaar om {time}",
+    remaining: "resterend",
+    estimating: "schatten…",
+    tap_for_temp: "tik voor temp",
+    tap_for_time: "tik voor tijd",
+    done_at: "Klaar ~{eta}",
+    eta: "ETA: {eta}",
+    rate: "Snelheid: {rate} {unit}/min",
+    stalled: "(gestagneerd)",
+    ambient: "Omgeving",
+    internal: "Kern",
+    probe_n: "Probe {n}",
+    of_temp: "van {temp}",
+    remove_from_heat: "Van het vuur halen",
+    remove_from_heat_now: "Nu van het vuur halen!",
+    carryover_full: "Nagaren brengt het naar {temp}.",
+    pull_temp: "Haaltemperatuur: {temp}.",
+    carryover_short: "Nagaren brengt het naar {temp}.",
+    pull_temp_short: "Haaltemp: {temp}.",
+    stall_detected: "Temperatuurstagnatie gedetecteerd",
+    stall_detail: "De getoonde tijd is de laatste stabiele schatting. Deze wordt hervat zodra de temperatuur weer stijgt.",
+    stall_short: "Stagnatie — laatste stabiele schatting",
+    unreachable_detected: "Doel kan niet worden bereikt",
+    unreachable_detail: "De omgevingstemperatuur is onder het doel gezakt. Verhoog de warmte om de bereiding af te ronden.",
+    unreachable_short: "Omgeving onder doel — verhoog de warmte",
+    target_reached: "Doel bereikt!",
+    cook_complete: "Kook voltooid!",
+    target_temp_reached: "Doeltemperatuur bereikt.",
+    not_started: "Niet gestart",
+    are_you_sure: "Weet je het zeker?",
+    yes_cancel: "Ja, annuleren",
+    yes_stop: "Ja, stoppen",
+    yes_new_cook: "Ja, nieuwe kook",
+    keep_cooking: "Doorgaan met koken",
+    entity_not_found: "Entiteit niet gevonden: {entity}",
+    err_define_entity: "Definieer een entiteit (time_remaining-sensor)",
+    switch_to_temp: "Naar temperatuurweergave",
+    switch_to_countdown: "Naar aftelweergave",
+    hours_short: "u",
+    minutes_short: "m",
+    ed_entity: "Time remaining-entiteit (verplicht)",
+    ed_eta: "ETA-entiteit (optioneel)",
+    ed_ambient: "Omgevingssensor (optioneel)",
+    ed_probe1: "Probe 1-sensor (optioneel)",
+    ed_probe2: "Probe 2-sensor (optioneel)",
+    ed_probe3: "Probe 3-sensor (optioneel)",
+    ed_entry: "Entry-ID (optioneel, voor meerdere instanties)",
+  },
+};
+
+// Current UI language — set from hass.language at the start of every render.
+// Module-level (not per-instance) is fine: hass.language is a single global
+// user preference, so all cards on the page share it.
+let _lang = "en";
+let _locale = "en";
+
+function _setLang(hass) {
+  _locale = hass?.language || "en";
+  _lang = _locale.split("-")[0];
+}
+
+// Translate `key`, interpolating {placeholder} tokens from `vars`.
+// Falls back to English, then to the raw key, so a missing entry is never fatal.
+function t(key, vars) {
+  const s = (I18N[_lang] && I18N[_lang][key]) ?? I18N.en[key] ?? key;
+  return vars ? s.replace(/\{(\w+)\}/g, (_, k) => (vars[k] != null ? vars[k] : `{${k}}`)) : s;
+}
+
+// Localised display label for a preset object (category / cut / doneness).
+// The English `label` stays canonical — it feeds the backend cook_name and
+// ml_predictor's lookup table (see _makeCookName), so it MUST NOT change per
+// language.  Display-only translations live in `labels` in cook_presets.json.
+function _displayLabel(obj) {
+  if (!obj) return "";
+  return (obj.labels && obj.labels[_lang]) || obj.label;
+}
 
 // ─── Preset data (loaded async from cook_presets.json) ───────────────────────
 //
@@ -61,6 +247,9 @@ function _loadPresets() {
 // Generate the cook_name string that is sent to the start_cook service and
 // stored on the Python predictor.  Must match the formula in ml_predictor.py:
 //   f"{cat['label']} {cut['label']} {don['label']}"
+// INVARIANT: this uses the canonical English `.label` (NOT _displayLabel) so the
+// cook_name is language-independent and keeps matching ml_predictor's lookup
+// table.  Never swap these to localised labels.
 function _makeCookName(category, cut, doneness) {
   if (!_presets || !category || !cut || !doneness) return "Custom";
   const catObj = _presets.categories.find((c) => c.id === category);
@@ -86,7 +275,7 @@ function _presetSelector(idSuffix, slotState, unit = "C") {
 
   if (!_presets) {
     return `<div style="font-size:0.85em;color:var(--secondary-text-color);padding:8px 0;">
-      Loading presets…</div>`;
+      ${t("loading_presets")}</div>`;
   }
 
   const { category, cut, doneness } = slotState;
@@ -102,7 +291,7 @@ function _presetSelector(idSuffix, slotState, unit = "C") {
                background:${sel ? "var(--primary-color)" : "var(--card-background-color)"};
                color:${sel ? "var(--text-primary-color)" : "var(--primary-text-color)"};
                font-weight:${sel ? "600" : "400"};">
-        ${c.icon} ${c.label}
+        ${c.icon} ${_displayLabel(c)}
       </button>`;
     })
     .join("");
@@ -115,11 +304,11 @@ function _presetSelector(idSuffix, slotState, unit = "C") {
   if (!catObj) return html;
 
   const cutOpts = catObj.cuts
-    .map((c) => `<option value="${c.id}"${c.id === cut ? " selected" : ""}>${c.label}</option>`)
+    .map((c) => `<option value="${c.id}"${c.id === cut ? " selected" : ""}>${_displayLabel(c)}</option>`)
     .join("");
   html += `<div style="margin-bottom:8px;">
     <select id="cp-cut-${idSuffix}" style="${selStyle}">
-      <option value="">— Select cut —</option>
+      <option value="">${t("select_cut")}</option>
       ${cutOpts}
     </select>
   </div>`;
@@ -133,12 +322,12 @@ function _presetSelector(idSuffix, slotState, unit = "C") {
   const donOpts = cutObj.doneness
     .map(
       (d) =>
-        `<option value="${d.id}"${d.id === doneness ? " selected" : ""}>${d.label} (${_toDisp(d.temp, unit)}${_unitLabel(unit)})</option>`
+        `<option value="${d.id}"${d.id === doneness ? " selected" : ""}>${_displayLabel(d)} (${_toDisp(d.temp, unit)}${_unitLabel(unit)})</option>`
     )
     .join("");
   html += `<div style="margin-bottom:8px;">
     <select id="cp-don-${idSuffix}" style="${selStyle}">
-      <option value="">— Select doneness —</option>
+      <option value="">${t("select_doneness")}</option>
       ${donOpts}
     </select>
   </div>`;
@@ -178,15 +367,15 @@ function formatTime(minutes) {
   if (minutes >= 60) {
     const h = Math.floor(minutes / 60);
     const m = Math.round(minutes % 60);
-    return `${h}h ${m}m`;
+    return `${h}${t("hours_short")} ${m}${t("minutes_short")}`;
   }
-  return `${Math.round(minutes)}m`;
+  return `${Math.round(minutes)}${t("minutes_short")}`;
 }
 
 function etaFromMinutes(minutes) {
   if (!minutes || isNaN(minutes) || minutes <= 0) return "";
   const d = new Date(Date.now() + minutes * 60 * 1000);
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleTimeString(_locale, { hour: "2-digit", minute: "2-digit" });
 }
 
 function tempInput(id, value, unit = "C") {
@@ -206,7 +395,7 @@ function modeToggle(current) {
              background:${active ? "var(--primary-color)" : "var(--card-background-color)"};
              color:${active ? "var(--text-primary-color)" : "var(--primary-text-color)"};
              font-size:0.85em;cursor:pointer;font-weight:${active ? "600" : "400"};">
-      ${m === "combined" ? "🔗 Combined" : "⚡ Individual"}
+      ${m === "combined" ? t("combined") : t("individual_toggle")}
     </button>`;
   });
   return `<div id="cp-mode-toggle" style="display:flex;gap:8px;margin-bottom:16px;">${btns.join("")}</div>`;
@@ -217,7 +406,7 @@ function modeToggle(current) {
 class CookPredictorCard extends HTMLElement {
   setConfig(config) {
     if (!config.entity) {
-      throw new Error("Please define an entity (time_remaining sensor)");
+      throw new Error(t("err_define_entity"));
     }
     this._config = config;
     this._hass = null;
@@ -421,6 +610,7 @@ class CookPredictorCard extends HTMLElement {
 
   _render() {
     if (!this._hass) return;
+    _setLang(this._hass);
 
     const entity = this._config.entity;
     const state = this._hass.states[entity];
@@ -429,7 +619,7 @@ class CookPredictorCard extends HTMLElement {
       this.innerHTML = `
         <ha-card header="Probe-ability">
           <div style="padding:16px;color:var(--error-color);">
-            Entity not found: ${entity}
+            ${t("entity_not_found", { entity })}
           </div>
         </ha-card>`;
       return;
@@ -537,9 +727,9 @@ class CookPredictorCard extends HTMLElement {
           </div>
           <div style="text-align:center;padding:20px 0;color:var(--warning-color);">
             <ha-icon icon="mdi:alert-outline" style="--mdc-icon-size:40px;"></ha-icon>
-            <div style="font-size:1em;font-weight:500;margin-top:10px;">No probe sensors available</div>
+            <div style="font-size:1em;font-weight:500;margin-top:10px;">${t("no_probe_sensors")}</div>
             <div style="font-size:0.85em;color:var(--secondary-text-color);margin-top:6px;">
-              Check that your thermometer probes are connected and visible in Home Assistant.
+              ${t("no_probe_sensors_hint")}
             </div>
           </div>
         </div>
@@ -561,7 +751,7 @@ class CookPredictorCard extends HTMLElement {
             <div id="cp-form-${slotKey}">
               ${_presetSelector(slotKey, state, unit)}
               <div style="margin-top:4px;">
-                <label style="display:block;font-size:0.85em;color:var(--secondary-text-color);margin-bottom:4px;">Target temperature (${_unitLabel(unit)})</label>
+                <label style="display:block;font-size:0.85em;color:var(--secondary-text-color);margin-bottom:4px;">${t("target_temp_label", { unit: _unitLabel(unit) })}</label>
                 ${tempInput(`cp-target-${slotKey}`, _toDisp(state.temp, unit), unit)}
               </div>
             </div>
@@ -569,7 +759,7 @@ class CookPredictorCard extends HTMLElement {
               style="width:100%;padding:12px;margin-top:16px;background:var(--primary-color);
                      color:var(--text-primary-color);border:none;border-radius:8px;
                      font-size:1em;font-weight:500;cursor:pointer;">
-              Start Cook
+              ${t("start_cook")}
             </button>
           </div>
         </div>
@@ -586,7 +776,7 @@ class CookPredictorCard extends HTMLElement {
         <div id="cp-form-combined">
           ${_presetSelector("combined", state, unit)}
           <div style="margin-top:4px;">
-            <label style="display:block;font-size:0.85em;color:var(--secondary-text-color);margin-bottom:4px;">Target temperature (${_unitLabel(unit)})</label>
+            <label style="display:block;font-size:0.85em;color:var(--secondary-text-color);margin-bottom:4px;">${t("target_temp_label", { unit: _unitLabel(unit) })}</label>
             ${tempInput("cp-target-combined", _toDisp(state.temp, unit), unit)}
           </div>
         </div>
@@ -594,13 +784,12 @@ class CookPredictorCard extends HTMLElement {
           style="width:100%;padding:12px;margin-top:16px;background:var(--primary-color);
                  color:var(--text-primary-color);border:none;border-radius:8px;
                  font-size:1em;font-weight:500;cursor:pointer;">
-          Start Cook
+          ${t("start_cook")}
         </button>
       </div>`;
   }
 
   _idleIndividualSlots(available) {
-    const probeLabels = ["Probe 1", "Probe 2", "Probe 3"];
     const unit = this._tempUnit || "C";
     let html = "";
     for (const i of available) {
@@ -608,12 +797,12 @@ class CookPredictorCard extends HTMLElement {
       html += `
         <div style="border:1px solid var(--divider-color);border-radius:10px;padding:14px;margin-bottom:12px;">
           <div style="font-size:0.9em;font-weight:600;margin-bottom:10px;color:var(--primary-color);">
-            ${probeLabels[i] || `Probe ${i + 1}`}
+            ${t("probe_n", { n: i + 1 })}
           </div>
           <div id="cp-form-${i}">
             ${_presetSelector(i, state, unit)}
             <div style="margin-top:4px;">
-              <label style="display:block;font-size:0.8em;color:var(--secondary-text-color);margin-bottom:4px;">Target (${_unitLabel(unit)})</label>
+              <label style="display:block;font-size:0.8em;color:var(--secondary-text-color);margin-bottom:4px;">${t("target_label", { unit: _unitLabel(unit) })}</label>
               ${tempInput(`cp-target-${i}`, _toDisp(state.temp, unit), unit)}
             </div>
           </div>
@@ -621,7 +810,7 @@ class CookPredictorCard extends HTMLElement {
             style="width:100%;padding:10px;margin-top:10px;background:var(--primary-color);
                    color:var(--text-primary-color);border:none;border-radius:8px;
                    font-size:0.9em;font-weight:500;cursor:pointer;">
-            Start Probe ${i + 1}
+            ${t("start_probe", { n: i + 1 })}
           </button>
         </div>`;
     }
@@ -640,7 +829,7 @@ class CookPredictorCard extends HTMLElement {
       ${_presetSelector(idSuffix, state, unit)}
       <div style="margin-top:4px;">
         <label style="display:block;font-size:0.85em;color:var(--secondary-text-color);margin-bottom:4px;">
-          Target temperature (${_unitLabel(unit)})
+          ${t("target_temp_label", { unit: _unitLabel(unit) })}
         </label>
         ${tempInput(`cp-target-${idSuffix}`, _toDisp(state.temp, unit), unit)}
       </div>`;
@@ -747,7 +936,7 @@ class CookPredictorCard extends HTMLElement {
     const needed = 10;
     const pct = Math.min((count / needed) * 100, 100);
     const displayCount = Math.min(count, needed);
-    const msg = attrs.message || `Collecting data (${displayCount}/${needed})`;
+    const msg = attrs.message || t("collecting_data", { count: displayCount, needed });
     const probeMode = attrs.probe_mode || "combined";
     const probeActive = attrs.probe_active || [true];
 
@@ -759,13 +948,13 @@ class CookPredictorCard extends HTMLElement {
             <span style="font-size:1.3em;font-weight:500;">Probe-ability</span>
             <span style="margin-left:auto;font-size:0.8em;color:var(--secondary-text-color);
                          text-transform:capitalize;background:var(--divider-color);
-                         padding:2px 8px;border-radius:10px;">${probeMode}</span>
+                         padding:2px 8px;border-radius:10px;">${t(`mode_${probeMode}`)}</span>
           </div>
 
           <div style="text-align:center;padding:16px 0;">
             <ha-icon icon="mdi:timer-sand" style="color:var(--secondary-text-color);--mdc-icon-size:40px;"></ha-icon>
             <div style="font-size:1em;color:var(--secondary-text-color);margin:10px 0 4px;">
-              Warming up… target <strong>${attrs.target_temp != null ? `${_toDisp(attrs.target_temp, this._tempUnit || "C")}${_unitLabel(this._tempUnit || "C")}` : "—"}</strong>
+              ${t("warming_up_target")} <strong>${attrs.target_temp != null ? `${_toDisp(attrs.target_temp, this._tempUnit || "C")}${_unitLabel(this._tempUnit || "C")}` : "—"}</strong>
             </div>
             <div style="font-size:0.85em;color:var(--secondary-text-color);margin-bottom:8px;">${msg}</div>
             <div style="background:var(--divider-color);border-radius:4px;height:6px;overflow:hidden;">
@@ -779,12 +968,12 @@ class CookPredictorCard extends HTMLElement {
             style="width:100%;padding:10px;background:none;color:var(--error-color);
                    border:1px solid var(--error-color);border-radius:8px;
                    font-size:0.9em;cursor:pointer;margin-top:16px;">
-            Cancel Cook
+            ${t("cancel_cook")}
           </button>
         </div>
       </ha-card>`;
 
-    this._addStopConfirm(this.querySelector("#cp-stop"), () => this._callStop(), "Yes, cancel");
+    this._addStopConfirm(this.querySelector("#cp-stop"), () => this._callStop(), t("yes_cancel"));
   }
 
   // ── Active ────────────────────────────────────────────────────────────
@@ -807,8 +996,8 @@ class CookPredictorCard extends HTMLElement {
     const timeRemaining = isNaN(_tr) || _tr < 0 ? null : _tr;
     const phase = attrs.phase || "heating";
     const confidence = attrs.confidence || "low";
-    const phaseColor = { heating: "var(--warning-color)", stall: "var(--error-color)", finishing: "var(--success-color)" }[phase] || "var(--primary-color)";
-    const phaseIcon = { heating: "mdi:fire", stall: "mdi:pause-circle-outline", finishing: "mdi:flag-checkered" }[phase] || "mdi:fire";
+    const phaseColor = { heating: "var(--warning-color)", stall: "var(--error-color)", finishing: "var(--success-color)", unreachable: "var(--error-color)" }[phase] || "var(--primary-color)";
+    const phaseIcon = { heating: "mdi:fire", stall: "mdi:pause-circle-outline", finishing: "mdi:flag-checkered", unreachable: "mdi:fire-alert" }[phase] || "mdi:fire";
     const confDots = { low: "●○○", medium: "●●○", high: "●●●" }[confidence] || "";
     const modelBadge = attrs.prediction_model === "ml"
       ? `<span style="font-size:0.7em;background:rgba(76,175,80,0.15);color:#4caf50;border-radius:3px;padding:1px 4px;margin-left:5px;vertical-align:middle;">ML</span>`
@@ -822,7 +1011,7 @@ class CookPredictorCard extends HTMLElement {
     if (etaEntity && this._hass.states[etaEntity]) {
       const etaState = this._hass.states[etaEntity].state;
       if (etaState && etaState !== "unavailable" && etaState !== "unknown") {
-        try { etaDisplay = new Date(etaState).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); } catch (e) { /* ignore */ }
+        try { etaDisplay = new Date(etaState).toLocaleTimeString(_locale, { hour: "2-digit", minute: "2-digit" }); } catch (e) { /* ignore */ }
       }
     }
     if (!etaDisplay && timeRemaining != null) etaDisplay = etaFromMinutes(timeRemaining);
@@ -839,7 +1028,7 @@ class CookPredictorCard extends HTMLElement {
       const tgt = attrs.target_temp;
       progress = (cur != null && tgt > 0) ? Math.min(cur / tgt, 1) : 0;
       centerPrimary = cur != null ? `${_toDisp(cur, _unit)}${_unitLabel(_unit)}` : "—";
-      centerSecondary = tgt ? `of ${_toDisp(tgt, _unit)}${_unitLabel(_unit)}` : "";
+      centerSecondary = tgt ? t("of_temp", { temp: `${_toDisp(tgt, _unit)}${_unitLabel(_unit)}` }) : "";
     } else {
       // countdown: ring fills as time elapses
       if (timeRemaining != null) {
@@ -847,12 +1036,12 @@ class CookPredictorCard extends HTMLElement {
         const total = timeRemaining + elapsed;
         progress = total > 0 ? Math.max(0, Math.min(elapsed / total, 1)) : 0;
         centerPrimary = formatTime(timeRemaining);
-        centerSecondary = "remaining";
+        centerSecondary = t("remaining");
       } else {
         // No estimate available yet (rate too low / no cached value)
         progress = 0;
         centerPrimary = "—";
-        centerSecondary = "estimating…";
+        centerSecondary = t("estimating");
       }
     }
 
@@ -881,7 +1070,7 @@ class CookPredictorCard extends HTMLElement {
     const offset = (CIRC * (1 - progress)).toFixed(2);
     const timerIcon = timerMode === "countdown" ? "⏱" : "🌡";
     const nextMode = timerMode === "countdown" ? "tempup" : "countdown";
-    const nextLabel = timerMode === "countdown" ? "Switch to temperature view" : "Switch to countdown view";
+    const nextLabel = timerMode === "countdown" ? t("switch_to_temp") : t("switch_to_countdown");
     const combinedPresetName = this._getActivePresetName("combined");
 
     this.innerHTML = `
@@ -897,7 +1086,7 @@ class CookPredictorCard extends HTMLElement {
                 <div style="font-size:1.1em;font-weight:500;">Probe-ability</div>
                 ${shouldPull
                   ? `<div style="font-size:0.78em;color:var(--warning-color);font-weight:600;">
-                       Remove from heat
+                       ${t("remove_from_heat")}
                      </div>`
                   : combinedPresetName
                     ? `<div style="font-size:0.78em;color:var(--secondary-text-color);">
@@ -942,10 +1131,10 @@ class CookPredictorCard extends HTMLElement {
               <!-- Tap hint -->
               <text x="60" y="86" text-anchor="middle"
                 style="font-size:8px;fill:var(--secondary-text-color);opacity:0.5;">
-                ${timerMode === "countdown" ? "tap for temp" : "tap for time"}
+                ${timerMode === "countdown" ? t("tap_for_temp") : t("tap_for_time")}
               </text>
             </svg>
-            ${etaDisplay ? `<div style="font-size:0.95em;color:var(--secondary-text-color);margin-top:2px;">Done ~${etaDisplay}</div>` : ""}
+            ${etaDisplay ? `<div style="font-size:0.95em;color:var(--secondary-text-color);margin-top:2px;">${t("done_at", { eta: etaDisplay })}</div>` : ""}
           </div>
 
           <!-- Remove from heat banner -->
@@ -957,11 +1146,11 @@ class CookPredictorCard extends HTMLElement {
                 style="color:var(--warning-color);--mdc-icon-size:36px;flex-shrink:0;"></ha-icon>
               <div>
                 <div style="font-size:1em;font-weight:700;color:var(--warning-color);">
-                  Remove from heat now!
+                  ${t("remove_from_heat_now")}
                 </div>
                 <div style="font-size:0.8em;color:var(--secondary-text-color);margin-top:3px;">
-                  Carryover cooking will bring it to ${_toDisp(attrs.target_temp, _unit)}${_unitLabel(_unit)}.
-                  Pull temperature: ${_toDisp(pullTemp, _unit)}${_unitLabel(_unit)}.
+                  ${t("carryover_full", { temp: `${_toDisp(attrs.target_temp, _unit)}${_unitLabel(_unit)}` })}
+                  ${t("pull_temp", { temp: `${_toDisp(pullTemp, _unit)}${_unitLabel(_unit)}` })}
                 </div>
               </div>
             </div>` : ""}
@@ -976,9 +1165,23 @@ class CookPredictorCard extends HTMLElement {
                         border:1px solid var(--error-color);border-radius:10px;">
               <ha-icon icon="mdi:pause-circle" style="color:var(--error-color);--mdc-icon-size:28px;flex-shrink:0;"></ha-icon>
               <div>
-                <div style="font-size:0.9em;font-weight:600;color:var(--error-color);">Temperature stall detected</div>
+                <div style="font-size:0.9em;font-weight:600;color:var(--error-color);">${t("stall_detected")}</div>
                 <div style="font-size:0.78em;color:var(--secondary-text-color);margin-top:2px;">
-                  Time shown is the last stable estimate. It will resume updating when the temperature starts rising again.
+                  ${t("stall_detail")}
+                </div>
+              </div>
+            </div>` : ""}
+
+          <!-- Unreachable banner — ambient has fallen below the target -->
+          ${phase === "unreachable" ? `
+            <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;margin-top:12px;
+                        background:rgba(var(--rgb-error-color,244,67,54),0.12);
+                        border:1px solid var(--error-color);border-radius:10px;">
+              <ha-icon icon="mdi:fire-alert" style="color:var(--error-color);--mdc-icon-size:28px;flex-shrink:0;"></ha-icon>
+              <div>
+                <div style="font-size:0.9em;font-weight:600;color:var(--error-color);">${t("unreachable_detected")}</div>
+                <div style="font-size:0.78em;color:var(--secondary-text-color);margin-top:2px;">
+                  ${t("unreachable_detail")}
                 </div>
               </div>
             </div>` : ""}
@@ -986,8 +1189,8 @@ class CookPredictorCard extends HTMLElement {
           <!-- Rate -->
           ${attrs.rate_c_per_minute != null
             ? `<div style="text-align:center;font-size:0.82em;color:var(--secondary-text-color);margin-top:8px;">
-                Rate: ${_unit === "F" ? (attrs.rate_c_per_minute * 9/5).toFixed(2) : attrs.rate_c_per_minute.toFixed(2)} ${_unitLabel(_unit)}/min
-                ${phase === "stall" ? '<span style="color:var(--error-color);"> (stalled)</span>' : ""}
+                ${t("rate", { rate: _unit === "F" ? (attrs.rate_c_per_minute * 9/5).toFixed(2) : attrs.rate_c_per_minute.toFixed(2), unit: _unitLabel(_unit) })}
+                ${phase === "stall" ? `<span style="color:var(--error-color);"> ${t("stalled")}</span>` : ""}
                </div>`
             : ""}
 
@@ -995,7 +1198,7 @@ class CookPredictorCard extends HTMLElement {
             style="width:100%;padding:10px;background:none;color:var(--error-color);
                    border:1px solid var(--error-color);border-radius:8px;
                    font-size:0.9em;cursor:pointer;margin-top:16px;">
-            Stop Cook
+            ${t("stop_cook")}
           </button>
         </div>
       </ha-card>`;
@@ -1004,7 +1207,7 @@ class CookPredictorCard extends HTMLElement {
       localStorage.setItem("probe_ability_timer_mode", nextMode);
       this._render();
     });
-    this._addStopConfirm(this.querySelector("#cp-stop"), () => this._callStop(), "Yes, cancel");
+    this._addStopConfirm(this.querySelector("#cp-stop"), () => this._callStop(), t("yes_cancel"));
   }
 
   _renderActiveIndividual(state, attrs) {
@@ -1063,12 +1266,14 @@ class CookPredictorCard extends HTMLElement {
         stall: "var(--error-color)",
         finishing: "var(--success-color)",
         done: "var(--success-color)",
+        unreachable: "var(--error-color)",
       }[pd.phase] || "var(--primary-color)";
       const phaseIcon = {
         heating: "mdi:fire",
         stall: "mdi:pause-circle-outline",
         finishing: "mdi:flag-checkered",
         done: "mdi:check-circle",
+        unreachable: "mdi:fire-alert",
       }[pd.phase] || "mdi:thermometer";
 
       let contentBlock = "";
@@ -1082,7 +1287,7 @@ class CookPredictorCard extends HTMLElement {
             <div id="cp-form-idle-${i}">
               ${_presetSelector(`idle-${i}`, idleState, this._tempUnit || "C")}
               <div style="margin-top:4px;">
-                <label style="display:block;font-size:0.8em;color:var(--secondary-text-color);margin-bottom:4px;">Target (${_unitLabel(this._tempUnit || "C")})</label>
+                <label style="display:block;font-size:0.8em;color:var(--secondary-text-color);margin-bottom:4px;">${t("target_label", { unit: _unitLabel(this._tempUnit || "C") })}</label>
                 ${tempInput(`cp-target-idle-${i}`, _toDisp(idleState.temp, this._tempUnit || "C"), this._tempUnit || "C")}
               </div>
             </div>
@@ -1092,7 +1297,7 @@ class CookPredictorCard extends HTMLElement {
             style="width:100%;padding:8px;margin-top:8px;background:var(--primary-color);
                    color:var(--text-primary-color);border:none;border-radius:6px;
                    font-size:0.85em;font-weight:500;cursor:pointer;">
-            Start Probe ${i + 1}
+            ${t("start_probe", { n: i + 1 })}
           </button>`;
 
       } else if (pd.phase === "collecting") {
@@ -1115,13 +1320,13 @@ class CookPredictorCard extends HTMLElement {
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
               <ha-icon icon="mdi:timer-sand" style="color:var(--warning-color);--mdc-icon-size:22px;flex-shrink:0;"></ha-icon>
               <span style="font-size:0.85em;color:var(--secondary-text-color);">
-                Warming up… target <strong>${pd.targetTemp != null ? `${_toDisp(pd.targetTemp, this._tempUnit || "C")}${_unitLabel(this._tempUnit || "C")}` : "—"}</strong>
+                ${t("warming_up_target")} <strong>${pd.targetTemp != null ? `${_toDisp(pd.targetTemp, this._tempUnit || "C")}${_unitLabel(this._tempUnit || "C")}` : "—"}</strong>
               </span>
             </div>
 
             ${!readingsDone ? `
               <div style="font-size:0.78em;color:var(--secondary-text-color);margin-bottom:4px;">
-                Readings: ${displayCount}/${NEEDED_READINGS}
+                ${t("readings", { count: displayCount, needed: NEEDED_READINGS })}
               </div>
               <div style="background:var(--divider-color);border-radius:4px;height:6px;overflow:hidden;">
                 <div style="background:var(--warning-color);height:100%;
@@ -1132,10 +1337,10 @@ class CookPredictorCard extends HTMLElement {
               <div style="display:flex;align-items:center;gap:4px;font-size:0.78em;
                           color:var(--success-color);margin-bottom:6px;">
                 <ha-icon icon="mdi:check" style="--mdc-icon-size:14px;"></ha-icon>
-                Readings: ${NEEDED_READINGS}/${NEEDED_READINGS}
+                ${t("readings", { count: NEEDED_READINGS, needed: NEEDED_READINGS })}
               </div>
               <div style="font-size:0.78em;color:var(--secondary-text-color);margin-bottom:4px;">
-                Building data span…${readyAt ? ` ready at ${readyAt}` : ""}
+                ${t("building_span")}${readyAt ? ` ${t("ready_at", { time: readyAt })}` : ""}
               </div>
               <div style="background:var(--divider-color);border-radius:4px;height:6px;overflow:hidden;">
                 <div style="background:var(--warning-color);height:100%;width:${spanPct}%;
@@ -1146,10 +1351,10 @@ class CookPredictorCard extends HTMLElement {
             <div style="display:flex;justify-content:space-between;margin-top:8px;
                         font-size:0.8em;color:var(--secondary-text-color);">
               ${pd.currentTemp != null
-                ? `<span>Internal: <strong>${_toDisp(pd.currentTemp, this._tempUnit || "C")}${_unitLabel(this._tempUnit || "C")}</strong></span>`
+                ? `<span>${t("internal")}: <strong>${_toDisp(pd.currentTemp, this._tempUnit || "C")}${_unitLabel(this._tempUnit || "C")}</strong></span>`
                 : "<span></span>"}
               ${ambientTemp != null
-                ? `<span>Ambient: <strong>${_toDisp(ambientTemp, this._tempUnit || "C")}${_unitLabel(this._tempUnit || "C")}</strong></span>`
+                ? `<span>${t("ambient")}: <strong>${_toDisp(ambientTemp, this._tempUnit || "C")}${_unitLabel(this._tempUnit || "C")}</strong></span>`
                 : ""}
             </div>
           </div>`;
@@ -1158,7 +1363,7 @@ class CookPredictorCard extends HTMLElement {
             style="width:100%;padding:8px;background:none;color:var(--error-color);
                    border:1px solid var(--error-color);border-radius:6px;
                    font-size:0.8em;cursor:pointer;margin-top:6px;">
-            Cancel Probe ${i + 1}
+            ${t("cancel_probe", { n: i + 1 })}
           </button>`;
 
       } else if (pd.phase === "done") {
@@ -1168,7 +1373,7 @@ class CookPredictorCard extends HTMLElement {
             <ha-icon icon="mdi:check-circle"
               style="color:var(--success-color);--mdc-icon-size:40px;"></ha-icon>
             <div style="font-size:0.9em;font-weight:600;color:var(--success-color);margin-top:4px;">
-              Target reached!
+              ${t("target_reached")}
             </div>
             ${pd.currentTemp != null
               ? `<div style="font-size:0.8em;color:var(--secondary-text-color);">${_toDisp(pd.currentTemp, this._tempUnit || "C")}${_unitLabel(this._tempUnit || "C")}</div>`
@@ -1179,7 +1384,7 @@ class CookPredictorCard extends HTMLElement {
             style="width:100%;padding:8px;background:var(--primary-color);
                    color:var(--text-primary-color);border:none;border-radius:6px;
                    font-size:0.8em;font-weight:500;cursor:pointer;margin-top:4px;">
-            New Cook (Probe ${i + 1})
+            ${t("new_cook_probe", { n: i + 1 })}
           </button>`;
 
       } else {
@@ -1193,13 +1398,13 @@ class CookPredictorCard extends HTMLElement {
         // Countdown ring — always shows time remaining in individual mode
         let progress = 0;
         let centerPrimary = "—";
-        let centerSecondary = "estimating…";
+        let centerSecondary = t("estimating");
         if (pd.timeRemaining) {
           const elapsed = pd.readingsCount * 0.5;
           const total = pd.timeRemaining + elapsed;
           progress = total > 0 ? Math.min(elapsed / total, 1) : 0;
           centerPrimary = formatTime(pd.timeRemaining);
-          centerSecondary = "remaining";
+          centerSecondary = t("remaining");
         }
 
         const offset = (CIRC * (1 - progress)).toFixed(2);
@@ -1249,13 +1454,13 @@ class CookPredictorCard extends HTMLElement {
           <div style="display:flex;justify-content:space-between;margin-top:8px;
                       font-size:0.78em;color:var(--secondary-text-color);">
             <span>${pd.ratePerMinute != null
-              ? `Rate: ${(this._tempUnit === "F" ? pd.ratePerMinute * 9/5 : pd.ratePerMinute).toFixed(2)}${_unitLabel(this._tempUnit || "C")}/min`
+              ? t("rate", { rate: (this._tempUnit === "F" ? pd.ratePerMinute * 9/5 : pd.ratePerMinute).toFixed(2), unit: _unitLabel(this._tempUnit || "C") })
               : ""}</span>
-            <span>${eta ? `ETA: ${eta}` : ""}</span>
+            <span>${eta ? t("eta", { eta }) : ""}</span>
           </div>
           ${ambientTemp != null ? `
             <div style="font-size:0.78em;color:var(--secondary-text-color);margin-top:2px;">
-              Ambient: ${_toDisp(ambientTemp, this._tempUnit || "C")}${_unitLabel(this._tempUnit || "C")}
+              ${t("ambient")}: ${_toDisp(ambientTemp, this._tempUnit || "C")}${_unitLabel(this._tempUnit || "C")}
             </div>` : ""}
 
           ${shouldPull ? `
@@ -1266,10 +1471,10 @@ class CookPredictorCard extends HTMLElement {
                 style="color:var(--warning-color);--mdc-icon-size:22px;flex-shrink:0;"></ha-icon>
               <div>
                 <div style="font-size:0.85em;font-weight:700;color:var(--warning-color);">
-                  Remove from heat now!
+                  ${t("remove_from_heat_now")}
                 </div>
                 <div style="font-size:0.73em;color:var(--secondary-text-color);margin-top:1px;">
-                  Carryover will bring it to ${_toDisp(pd.targetTemp, this._tempUnit || "C")}${_unitLabel(this._tempUnit || "C")}. Pull temp: ${_toDisp(pd.pullTemp, this._tempUnit || "C")}${_unitLabel(this._tempUnit || "C")}.
+                  ${t("carryover_short", { temp: `${_toDisp(pd.targetTemp, this._tempUnit || "C")}${_unitLabel(this._tempUnit || "C")}` })} ${t("pull_temp_short", { temp: `${_toDisp(pd.pullTemp, this._tempUnit || "C")}${_unitLabel(this._tempUnit || "C")}` })}
                 </div>
               </div>
             </div>` : ""}
@@ -1279,7 +1484,15 @@ class CookPredictorCard extends HTMLElement {
                         border:1px solid var(--error-color);border-radius:8px;font-size:0.76em;">
               <ha-icon icon="mdi:pause-circle"
                 style="color:var(--error-color);--mdc-icon-size:16px;flex-shrink:0;"></ha-icon>
-              <span style="color:var(--error-color);">Stall — showing last stable estimate</span>
+              <span style="color:var(--error-color);">${t("stall_short")}</span>
+            </div>` : ""}
+          ${pd.phase === "unreachable" ? `
+            <div style="display:flex;align-items:center;gap:6px;padding:5px 8px;margin-top:6px;
+                        background:rgba(var(--rgb-error-color,244,67,54),0.1);
+                        border:1px solid var(--error-color);border-radius:8px;font-size:0.76em;">
+              <ha-icon icon="mdi:fire-alert"
+                style="color:var(--error-color);--mdc-icon-size:16px;flex-shrink:0;"></ha-icon>
+              <span style="color:var(--error-color);">${t("unreachable_short")}</span>
             </div>` : ""}`;
 
         actionBlock = `
@@ -1287,7 +1500,7 @@ class CookPredictorCard extends HTMLElement {
             style="width:100%;padding:8px;background:none;color:var(--error-color);
                    border:1px solid var(--error-color);border-radius:6px;
                    font-size:0.8em;cursor:pointer;margin-top:8px;">
-            Stop Probe ${i + 1}
+            ${t("stop_probe", { n: i + 1 })}
           </button>`;
       }
 
@@ -1306,7 +1519,7 @@ class CookPredictorCard extends HTMLElement {
           <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;">
             <div style="font-size:0.9em;font-weight:600;
                         color:${pd.active ? phaseColor : "var(--secondary-text-color)"};">
-              Probe ${i + 1}
+              ${t("probe_n", { n: i + 1 })}
               ${showPhaseDetail
                 ? `<ha-icon icon="${phaseIcon}"
                      style="--mdc-icon-size:16px;vertical-align:middle;margin-left:4px;"></ha-icon>`
@@ -1320,7 +1533,7 @@ class CookPredictorCard extends HTMLElement {
                    <div>${pd.targetTemp != null ? `${_toDisp(pd.targetTemp, this._tempUnit || "C")}${_unitLabel(this._tempUnit || "C")}` : "?"}${showPhaseDetail && confDots
                      ? `<span style="margin-left:6px;letter-spacing:2px;">${confDots}</span>${indivModelBadge}`
                      : ""}</div>`
-                : `<div>Not started</div>`}
+                : `<div>${t("not_started")}</div>`}
             </div>
           </div>
           ${contentBlock}
@@ -1338,7 +1551,7 @@ class CookPredictorCard extends HTMLElement {
             </div>
             <span style="font-size:0.75em;color:var(--secondary-text-color);
                          background:var(--divider-color);padding:2px 8px;
-                         border-radius:10px;">Individual</span>
+                         border-radius:10px;">${t("individual_badge")}</span>
           </div>
           ${probeSlots}
         </div>
@@ -1348,9 +1561,9 @@ class CookPredictorCard extends HTMLElement {
     this.querySelectorAll(".cp-stop-probe").forEach((btn) => {
       const idx = parseInt(btn.dataset.index, 10);
       const pd = probeData[idx];
-      const label = pd.phase === "collecting" ? "Yes, cancel"
-                  : pd.phase === "done"       ? "Yes, new cook"
-                  :                             "Yes, stop";
+      const label = pd.phase === "collecting" ? t("yes_cancel")
+                  : pd.phase === "done"       ? t("yes_new_cook")
+                  :                             t("yes_stop");
       this._addStopConfirm(btn, () => this._callStop(idx), label);
     });
 
@@ -1380,20 +1593,20 @@ class CookPredictorCard extends HTMLElement {
           <div style="text-align:center;padding:24px 0;">
             <ha-icon icon="mdi:check-circle"
               style="color:var(--success-color);--mdc-icon-size:64px;margin-bottom:12px;"></ha-icon>
-            <div style="font-size:1.4em;font-weight:600;margin-bottom:4px;">Cook Complete!</div>
-            <div style="font-size:1em;color:var(--success-color);">Target temperature reached.</div>
+            <div style="font-size:1.4em;font-weight:600;margin-bottom:4px;">${t("cook_complete")}</div>
+            <div style="font-size:1em;color:var(--success-color);">${t("target_temp_reached")}</div>
           </div>
           ${this._renderTempsRow(attrs)}
           <button id="cp-stop"
             style="width:100%;padding:12px;background:var(--primary-color);
                    color:var(--text-primary-color);border:none;border-radius:8px;
                    font-size:1em;font-weight:500;cursor:pointer;margin-top:16px;">
-            New Cook
+            ${t("new_cook")}
           </button>
         </div>
       </ha-card>`;
 
-    this._addStopConfirm(this.querySelector("#cp-stop"), () => this._callStop(), "Yes, cancel");
+    this._addStopConfirm(this.querySelector("#cp-stop"), () => this._callStop(), t("yes_cancel"));
   }
 
   // ── Temperature display ───────────────────────────────────────────────
@@ -1402,16 +1615,16 @@ class CookPredictorCard extends HTMLElement {
     const temps = [];
 
     if (attrs.current_temp != null) {
-      temps.push({ label: attrs.probe_count > 1 ? "Probe 1" : "Internal", value: attrs.current_temp });
+      temps.push({ label: attrs.probe_count > 1 ? t("probe_n", { n: 1 }) : t("internal"), value: attrs.current_temp });
     }
     if (attrs.current_temp_2 != null) {
-      temps.push({ label: "Probe 2", value: attrs.current_temp_2 });
+      temps.push({ label: t("probe_n", { n: 2 }), value: attrs.current_temp_2 });
     }
     if (attrs.current_temp_3 != null) {
-      temps.push({ label: "Probe 3", value: attrs.current_temp_3 });
+      temps.push({ label: t("probe_n", { n: 3 }), value: attrs.current_temp_3 });
     }
     if (attrs.ambient_temp != null) {
-      temps.push({ label: "Ambient", value: attrs.ambient_temp });
+      temps.push({ label: t("ambient"), value: attrs.ambient_temp });
     }
 
     if (temps.length === 0) return "";
@@ -1434,14 +1647,15 @@ class CookPredictorCard extends HTMLElement {
   // Confirming calls stopFn(); denying restores the original button.
   // If HA pushes a state update while the prompt is open it will be wiped
   // by the re-render — the user simply clicks Stop again.
-  _addStopConfirm(btn, stopFn, confirmLabel = "Yes, stop") {
+  _addStopConfirm(btn, stopFn, confirmLabel) {
+    if (confirmLabel == null) confirmLabel = t("yes_stop");
     btn.addEventListener("click", () => {
       this._confirmPending = true;   // block hass() re-renders while prompt is open
       const wrapper = document.createElement("div");
       wrapper.style.cssText = "margin-top:4px;";
       wrapper.innerHTML = `
         <div style="font-size:0.82em;color:var(--error-color);text-align:center;margin-bottom:6px;font-weight:500;">
-          Are you sure?
+          ${t("are_you_sure")}
         </div>
         <div style="display:flex;gap:6px;">
           <button class="cp-confirm-yes"
@@ -1453,7 +1667,7 @@ class CookPredictorCard extends HTMLElement {
             style="flex:1;padding:8px;background:none;color:var(--primary-text-color);
                    border:1px solid var(--divider-color);border-radius:6px;
                    font-size:0.82em;cursor:pointer;">
-            Keep cooking
+            ${t("keep_cooking")}
           </button>
         </div>`;
       btn.replaceWith(wrapper);
@@ -1501,14 +1715,16 @@ class CookPredictorCard extends HTMLElement {
 
 // ─── Visual editor (ha-form based) ─────────────────────────────────────────────
 
+// `tkey` maps each field to an I18N key; the label is resolved at render time
+// via computeLabel so the editor follows the user's language.
 const EDITOR_SCHEMA = [
-  { name: "entity",         label: "Time remaining entity (required)", selector: { entity: {} } },
-  { name: "eta_entity",     label: "ETA entity (optional)",            selector: { entity: {} } },
-  { name: "ambient_sensor", label: "Ambient sensor (optional)",        selector: { entity: {} } },
-  { name: "probe_sensor_0", label: "Probe 1 sensor (optional)",        selector: { entity: {} } },
-  { name: "probe_sensor_1", label: "Probe 2 sensor (optional)",        selector: { entity: {} } },
-  { name: "probe_sensor_2", label: "Probe 3 sensor (optional)",        selector: { entity: {} } },
-  { name: "entry_id",       label: "Entry ID (optional, for multi-instance)", selector: { text: {} } },
+  { name: "entity",         tkey: "ed_entity",  selector: { entity: {} } },
+  { name: "eta_entity",     tkey: "ed_eta",     selector: { entity: {} } },
+  { name: "ambient_sensor", tkey: "ed_ambient", selector: { entity: {} } },
+  { name: "probe_sensor_0", tkey: "ed_probe1",  selector: { entity: {} } },
+  { name: "probe_sensor_1", tkey: "ed_probe2",  selector: { entity: {} } },
+  { name: "probe_sensor_2", tkey: "ed_probe3",  selector: { entity: {} } },
+  { name: "entry_id",       tkey: "ed_entry",   selector: { text: {} } },
 ];
 
 class CookPredictorCardEditor extends HTMLElement {
@@ -1556,12 +1772,13 @@ class CookPredictorCardEditor extends HTMLElement {
 
   _updateForm() {
     if (!this._hass || !this._config) return;
+    _setLang(this._hass);
 
     // Create ha-form once; update its properties on subsequent calls
     let form = this.querySelector("ha-form");
     if (!form) {
       form = document.createElement("ha-form");
-      form.computeLabel = (schema) => schema.label || schema.name;
+      form.computeLabel = (schema) => (schema.tkey ? t(schema.tkey) : schema.label || schema.name);
       form.addEventListener("value-changed", (e) => {
         this._config = this._fromFormData(e.detail.value);
         this.dispatchEvent(new CustomEvent("config-changed", {

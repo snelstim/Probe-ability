@@ -1,0 +1,184 @@
+{
+  "categories": [
+    {
+      "id": "beef",
+      "label": "Beef",
+      "icon": "🥩",
+      "cuts": [
+        {
+          "id": "sirloin",
+          "label": "Sirloin",
+          "doneness": [
+            { "id": "rare",        "label": "Rare",        "temp": 50 },
+            { "id": "medium_rare", "label": "Medium Rare", "temp": 54 },
+            { "id": "medium",      "label": "Medium",      "temp": 60 },
+            { "id": "medium_well", "label": "Medium Well", "temp": 65 },
+            { "id": "well_done",   "label": "Well Done",   "temp": 71 }
+          ]
+        },
+        {
+          "id": "rib_eye",
+          "label": "Rib Eye",
+          "doneness": [
+            { "id": "rare",        "label": "Rare",        "temp": 50 },
+            { "id": "medium_rare", "label": "Medium Rare", "temp": 54 },
+            { "id": "medium",      "label": "Medium",      "temp": 60 },
+            { "id": "medium_well", "label": "Medium Well", "temp": 65 },
+            { "id": "well_done",   "label": "Well Done",   "temp": 71 }
+          ]
+        },
+        {
+          "id": "brisket",
+          "label": "Brisket",
+          "doneness": [
+            { "id": "fall_apart", "label": "Fall Apart", "temp": 96 }
+          ]
+        },
+        {
+          "id": "burger",
+          "label": "Burger",
+          "doneness": [
+            { "id": "medium",    "label": "Medium",    "temp": 71 },
+            { "id": "well_done", "label": "Well Done", "temp": 77 }
+          ]
+        },
+        {
+          "id": "roast",
+          "label": "Roast",
+          "doneness": [
+            { "id": "medium_rare", "label": "Medium Rare", "temp": 57 },
+            { "id": "medium",      "label": "Medium",      "temp": 60 },
+            { "id": "well_done",   "label": "Well Done",   "temp": 71 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pork",
+      "label": "Pork",
+      "icon": "🐷",
+      "cuts": [
+        {
+          "id": "loin",
+          "label": "Loin / Chop",
+          "doneness": [
+            { "id": "medium",    "label": "Medium",    "temp": 63 },
+            { "id": "well_done", "label": "Well Done", "temp": 71 }
+          ]
+        },
+        {
+          "id": "shoulder",
+          "label": "Shoulder",
+          "doneness": [
+            { "id": "pulled", "label": "Pulled", "temp": 96 }
+          ]
+        },
+        {
+          "id": "belly",
+          "label": "Belly",
+          "doneness": [
+            { "id": "well_done", "label": "Well Done", "temp": 75 }
+          ]
+        },
+        {
+          "id": "rib_pork",
+          "label": "Ribs",
+          "doneness": [
+            { "id": "fall_apart", "label": "Fall Apart", "temp": 93 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "poultry",
+      "label": "Poultry",
+      "icon": "🐔",
+      "cuts": [
+        {
+          "id": "breast",
+          "label": "Chicken Breast",
+          "doneness": [
+            { "id": "medium", "label": "Medium", "temp": 74 }
+          ]
+        },
+        {
+          "id": "duck_breast",
+          "label": "Duck Breast",
+          "doneness": [
+            { "id": "medium", "label": "Medium", "temp": 63 }
+          ]
+        },
+        {
+          "id": "thigh",
+          "label": "Thigh / Leg",
+          "doneness": [
+            { "id": "well_done", "label": "Well Done", "temp": 82 }
+          ]
+        },
+        {
+          "id": "whole",
+          "label": "Whole Bird",
+          "doneness": [
+            { "id": "well_done", "label": "Well Done", "temp": 82 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "lamb",
+      "label": "Lamb",
+      "icon": "🐑",
+      "cuts": [
+        {
+          "id": "leg_lamb",
+          "label": "Leg",
+          "doneness": [
+            { "id": "rare",        "label": "Rare",        "temp": 52 },
+            { "id": "medium_rare", "label": "Medium Rare", "temp": 57 },
+            { "id": "medium",      "label": "Medium",      "temp": 63 },
+            { "id": "well_done",   "label": "Well Done",   "temp": 71 }
+          ]
+        },
+        {
+          "id": "rib_rack",
+          "label": "Rack / Ribs",
+          "doneness": [
+            { "id": "rare",        "label": "Rare",        "temp": 52 },
+            { "id": "medium_rare", "label": "Medium Rare", "temp": 57 },
+            { "id": "medium",      "label": "Medium",      "temp": 63 }
+          ]
+        },
+        {
+          "id": "shoulder",
+          "label": "Shoulder",
+          "doneness": [
+            { "id": "fall_apart", "label": "Fall Apart", "temp": 85 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "other",
+      "label": "Other",
+      "icon": "🍖",
+      "cuts": [
+        {
+          "id": "fillet",
+          "label": "Fish / Salmon",
+          "doneness": [
+            { "id": "medium_rare", "label": "Medium Rare", "temp": 52 },
+            { "id": "medium",      "label": "Medium",      "temp": 60 }
+          ]
+        },
+        {
+          "id": "other",
+          "label": "Other",
+          "doneness": [
+            { "id": "medium",    "label": "Medium",    "temp": 70 },
+            { "id": "well_done", "label": "Well Done", "temp": 75 }
+          ]
+        }
+      ]
+    }
+  ]
+}

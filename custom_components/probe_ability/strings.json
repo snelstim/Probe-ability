@@ -1,0 +1,121 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up Probe-ability",
+        "description": "Select the temperature sensors to use for cook predictions.",
+        "data": {
+          "internal_sensor": "Internal (meat) temperature — probe 1",
+          "ambient_sensor": "Ambient (oven/smoker) temperature",
+          "internal_sensor_2": "Internal temperature — probe 2 (optional)",
+          "internal_sensor_3": "Internal temperature — probe 3 (optional)",
+          "temp_unit": "Temperature unit",
+          "export_cook_data": "Export cook data locally (for retraining)",
+          "share_cook_data": "Share anonymised cook data to improve the model"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure Probe-ability",
+        "description": "Update the sensors or data-sharing options for this instance.",
+        "data": {
+          "internal_sensor": "Internal (meat) temperature — probe 1",
+          "ambient_sensor": "Ambient (oven/smoker) temperature",
+          "internal_sensor_2": "Internal temperature — probe 2 (optional)",
+          "internal_sensor_3": "Internal temperature — probe 3 (optional)",
+          "temp_unit": "Temperature unit",
+          "export_cook_data": "Export cook data locally (for retraining)",
+          "share_cook_data": "Share anonymised cook data to improve the model"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "This internal sensor is already configured.",
+      "reconfigure_successful": "Configuration updated successfully."
+    }
+  },
+  "selector": {
+    "temp_unit": {
+      "options": {
+        "C": "Celsius (°C)",
+        "F": "Fahrenheit (°F)"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "time_remaining": { "name": "Time remaining" },
+      "time_remaining_probe2": { "name": "Time remaining (probe 2)" },
+      "time_remaining_probe3": { "name": "Time remaining (probe 3)" },
+      "estimated_completion": { "name": "Estimated completion" },
+      "estimated_completion_probe2": { "name": "Estimated completion (probe 2)" },
+      "estimated_completion_probe3": { "name": "Estimated completion (probe 3)" }
+    }
+  },
+  "services": {
+    "start_cook": {
+      "name": "Start cook",
+      "description": "Start a new cook session.",
+      "fields": {
+        "entry_id": {
+          "name": "Entry ID",
+          "description": "Config entry ID (optional if only one instance)."
+        },
+        "target_temp": {
+          "name": "Target temperature",
+          "description": "Target internal temperature in °C."
+        },
+        "probe_mode": {
+          "name": "Probe mode",
+          "description": "combined = all probes share one cook, individual = each probe is independent."
+        },
+        "probe_index": {
+          "name": "Probe index",
+          "description": "Which probe to start (0, 1, or 2). Only used in individual mode."
+        }
+      }
+    },
+    "stop_cook": {
+      "name": "Stop cook",
+      "description": "Stop a cook and clear readings.",
+      "fields": {
+        "entry_id": {
+          "name": "Entry ID",
+          "description": "Config entry ID (optional if only one instance)."
+        },
+        "probe_index": {
+          "name": "Probe index",
+          "description": "Which probe to stop (0, 1, or 2). Omit to stop all probes."
+        }
+      }
+    },
+    "set_target": {
+      "name": "Set target temperature",
+      "description": "Update the target temperature for an active cook.",
+      "fields": {
+        "entry_id": {
+          "name": "Entry ID",
+          "description": "Config entry ID (optional if only one instance)."
+        },
+        "target_temp": {
+          "name": "Target temperature",
+          "description": "New target internal temperature in °C."
+        },
+        "probe_index": {
+          "name": "Probe index",
+          "description": "Which probe to update (0, 1, or 2). Omit to update all probes."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "ambient_unavailable": {
+      "message": "Cannot start cook: ambient sensor is not available"
+    },
+    "probe_unavailable": {
+      "message": "Cannot start cook: probe {probe} sensor ({sensor_id}) is not available"
+    },
+    "no_probes_available": {
+      "message": "Cannot start cook: no probe sensors are currently available"
+    }
+  }
+}

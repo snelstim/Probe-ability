@@ -1,0 +1,121 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Probe-ability instellen",
+        "description": "Selecteer de temperatuursensoren die voor kookvoorspellingen worden gebruikt.",
+        "data": {
+          "internal_sensor": "Kerntemperatuur (vlees) — probe 1",
+          "ambient_sensor": "Omgevingstemperatuur (oven/smoker)",
+          "internal_sensor_2": "Kerntemperatuur — probe 2 (optioneel)",
+          "internal_sensor_3": "Kerntemperatuur — probe 3 (optioneel)",
+          "temp_unit": "Temperatuureenheid",
+          "export_cook_data": "Kookgegevens lokaal exporteren (voor hertrainen)",
+          "share_cook_data": "Geanonimiseerde kookgegevens delen om het model te verbeteren"
+        }
+      },
+      "reconfigure": {
+        "title": "Probe-ability opnieuw configureren",
+        "description": "Werk de sensoren of opties voor gegevensdeling van deze instantie bij.",
+        "data": {
+          "internal_sensor": "Kerntemperatuur (vlees) — probe 1",
+          "ambient_sensor": "Omgevingstemperatuur (oven/smoker)",
+          "internal_sensor_2": "Kerntemperatuur — probe 2 (optioneel)",
+          "internal_sensor_3": "Kerntemperatuur — probe 3 (optioneel)",
+          "temp_unit": "Temperatuureenheid",
+          "export_cook_data": "Kookgegevens lokaal exporteren (voor hertrainen)",
+          "share_cook_data": "Geanonimiseerde kookgegevens delen om het model te verbeteren"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Deze sensor is al geconfigureerd.",
+      "reconfigure_successful": "Configuratie succesvol bijgewerkt."
+    }
+  },
+  "selector": {
+    "temp_unit": {
+      "options": {
+        "C": "Celsius (°C)",
+        "F": "Fahrenheit (°F)"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "time_remaining": { "name": "Resterende tijd" },
+      "time_remaining_probe2": { "name": "Resterende tijd (probe 2)" },
+      "time_remaining_probe3": { "name": "Resterende tijd (probe 3)" },
+      "estimated_completion": { "name": "Geschatte voltooiing" },
+      "estimated_completion_probe2": { "name": "Geschatte voltooiing (probe 2)" },
+      "estimated_completion_probe3": { "name": "Geschatte voltooiing (probe 3)" }
+    }
+  },
+  "services": {
+    "start_cook": {
+      "name": "Kook starten",
+      "description": "Start een nieuwe kooksessie.",
+      "fields": {
+        "entry_id": {
+          "name": "Entry-ID",
+          "description": "Config-entry-ID (optioneel als er maar één instantie is)."
+        },
+        "target_temp": {
+          "name": "Doeltemperatuur",
+          "description": "Gewenste kerntemperatuur in °C."
+        },
+        "probe_mode": {
+          "name": "Probe-modus",
+          "description": "combined = alle probes delen één kook, individual = elke probe is onafhankelijk."
+        },
+        "probe_index": {
+          "name": "Probe-index",
+          "description": "Welke probe te starten (0, 1 of 2). Alleen gebruikt in de individuele modus."
+        }
+      }
+    },
+    "stop_cook": {
+      "name": "Kook stoppen",
+      "description": "Stop een kook en wis de metingen.",
+      "fields": {
+        "entry_id": {
+          "name": "Entry-ID",
+          "description": "Config-entry-ID (optioneel als er maar één instantie is)."
+        },
+        "probe_index": {
+          "name": "Probe-index",
+          "description": "Welke probe te stoppen (0, 1 of 2). Laat leeg om alle probes te stoppen."
+        }
+      }
+    },
+    "set_target": {
+      "name": "Doeltemperatuur instellen",
+      "description": "Werk de doeltemperatuur voor een actieve kook bij.",
+      "fields": {
+        "entry_id": {
+          "name": "Entry-ID",
+          "description": "Config-entry-ID (optioneel als er maar één instantie is)."
+        },
+        "target_temp": {
+          "name": "Doeltemperatuur",
+          "description": "Nieuwe gewenste kerntemperatuur in °C."
+        },
+        "probe_index": {
+          "name": "Probe-index",
+          "description": "Welke probe bij te werken (0, 1 of 2). Laat leeg om alle probes bij te werken."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "ambient_unavailable": {
+      "message": "Kan kook niet starten: omgevingssensor is niet beschikbaar"
+    },
+    "probe_unavailable": {
+      "message": "Kan kook niet starten: sensor van probe {probe} ({sensor_id}) is niet beschikbaar"
+    },
+    "no_probes_available": {
+      "message": "Kan kook niet starten: er zijn momenteel geen probe-sensoren beschikbaar"
+    }
+  }
+}

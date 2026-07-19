@@ -1,0 +1,207 @@
+{
+  "categories": [
+    {
+      "id": "beef",
+      "label": "Beef",
+      "labels": { "nl": "Rund" },
+      "icon": "🥩",
+      "cuts": [
+        {
+          "id": "sirloin",
+          "label": "Sirloin",
+          "labels": { "nl": "Sirloin" },
+          "doneness": [
+            { "id": "rare",        "label": "Rare",        "labels": { "nl": "Rood" },        "temp": 50 },
+            { "id": "medium_rare", "label": "Medium Rare", "labels": { "nl": "Medium rare" }, "temp": 54 },
+            { "id": "medium",      "label": "Medium",      "labels": { "nl": "Medium" },      "temp": 60 },
+            { "id": "medium_well", "label": "Medium Well", "labels": { "nl": "Medium well" }, "temp": 65 },
+            { "id": "well_done",   "label": "Well Done",   "labels": { "nl": "Doorbakken" },  "temp": 71 }
+          ]
+        },
+        {
+          "id": "rib_eye",
+          "label": "Rib Eye",
+          "labels": { "nl": "Ribeye" },
+          "doneness": [
+            { "id": "rare",        "label": "Rare",        "labels": { "nl": "Rood" },        "temp": 50 },
+            { "id": "medium_rare", "label": "Medium Rare", "labels": { "nl": "Medium rare" }, "temp": 54 },
+            { "id": "medium",      "label": "Medium",      "labels": { "nl": "Medium" },      "temp": 60 },
+            { "id": "medium_well", "label": "Medium Well", "labels": { "nl": "Medium well" }, "temp": 65 },
+            { "id": "well_done",   "label": "Well Done",   "labels": { "nl": "Doorbakken" },  "temp": 71 }
+          ]
+        },
+        {
+          "id": "brisket",
+          "label": "Brisket",
+          "labels": { "nl": "Brisket" },
+          "doneness": [
+            { "id": "fall_apart", "label": "Fall Apart", "labels": { "nl": "Uiteenvallend" }, "temp": 96 }
+          ]
+        },
+        {
+          "id": "burger",
+          "label": "Burger",
+          "labels": { "nl": "Burger" },
+          "doneness": [
+            { "id": "medium",    "label": "Medium",    "labels": { "nl": "Medium" },     "temp": 71 },
+            { "id": "well_done", "label": "Well Done", "labels": { "nl": "Doorbakken" }, "temp": 77 }
+          ]
+        },
+        {
+          "id": "roast",
+          "label": "Roast",
+          "labels": { "nl": "Braadstuk" },
+          "doneness": [
+            { "id": "medium_rare", "label": "Medium Rare", "labels": { "nl": "Medium rare" }, "temp": 57 },
+            { "id": "medium",      "label": "Medium",      "labels": { "nl": "Medium" },      "temp": 60 },
+            { "id": "well_done",   "label": "Well Done",   "labels": { "nl": "Doorbakken" },  "temp": 71 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pork",
+      "label": "Pork",
+      "labels": { "nl": "Varken" },
+      "icon": "🐷",
+      "cuts": [
+        {
+          "id": "loin",
+          "label": "Loin / Chop",
+          "labels": { "nl": "Karbonade" },
+          "doneness": [
+            { "id": "medium",    "label": "Medium",    "labels": { "nl": "Medium" },     "temp": 63 },
+            { "id": "well_done", "label": "Well Done", "labels": { "nl": "Doorbakken" }, "temp": 71 }
+          ]
+        },
+        {
+          "id": "shoulder",
+          "label": "Shoulder",
+          "labels": { "nl": "Schouder" },
+          "doneness": [
+            { "id": "pulled", "label": "Pulled", "labels": { "nl": "Pulled" }, "temp": 96 }
+          ]
+        },
+        {
+          "id": "belly",
+          "label": "Belly",
+          "labels": { "nl": "Buik" },
+          "doneness": [
+            { "id": "well_done", "label": "Well Done", "labels": { "nl": "Doorbakken" }, "temp": 75 }
+          ]
+        },
+        {
+          "id": "rib_pork",
+          "label": "Ribs",
+          "labels": { "nl": "Ribben" },
+          "doneness": [
+            { "id": "fall_apart", "label": "Fall Apart", "labels": { "nl": "Uiteenvallend" }, "temp": 93 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "poultry",
+      "label": "Poultry",
+      "labels": { "nl": "Gevogelte" },
+      "icon": "🐔",
+      "cuts": [
+        {
+          "id": "breast",
+          "label": "Chicken Breast",
+          "labels": { "nl": "Kipfilet" },
+          "doneness": [
+            { "id": "medium", "label": "Medium", "labels": { "nl": "Medium" }, "temp": 74 }
+          ]
+        },
+        {
+          "id": "duck_breast",
+          "label": "Duck Breast",
+          "labels": { "nl": "Eendenborst" },
+          "doneness": [
+            { "id": "medium", "label": "Medium", "labels": { "nl": "Medium" }, "temp": 63 }
+          ]
+        },
+        {
+          "id": "thigh",
+          "label": "Thigh / Leg",
+          "labels": { "nl": "Dij / Poot" },
+          "doneness": [
+            { "id": "well_done", "label": "Well Done", "labels": { "nl": "Doorbakken" }, "temp": 82 }
+          ]
+        },
+        {
+          "id": "whole",
+          "label": "Whole Bird",
+          "labels": { "nl": "Hele vogel" },
+          "doneness": [
+            { "id": "well_done", "label": "Well Done", "labels": { "nl": "Doorbakken" }, "temp": 82 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "lamb",
+      "label": "Lamb",
+      "labels": { "nl": "Lam" },
+      "icon": "🐑",
+      "cuts": [
+        {
+          "id": "leg_lamb",
+          "label": "Leg",
+          "labels": { "nl": "Bout" },
+          "doneness": [
+            { "id": "rare",        "label": "Rare",        "labels": { "nl": "Rood" },        "temp": 52 },
+            { "id": "medium_rare", "label": "Medium Rare", "labels": { "nl": "Medium rare" }, "temp": 57 },
+            { "id": "medium",      "label": "Medium",      "labels": { "nl": "Medium" },      "temp": 63 },
+            { "id": "well_done",   "label": "Well Done",   "labels": { "nl": "Doorbakken" },  "temp": 71 }
+          ]
+        },
+        {
+          "id": "rib_rack",
+          "label": "Rack / Ribs",
+          "labels": { "nl": "Rack / Ribben" },
+          "doneness": [
+            { "id": "rare",        "label": "Rare",        "labels": { "nl": "Rood" },        "temp": 52 },
+            { "id": "medium_rare", "label": "Medium Rare", "labels": { "nl": "Medium rare" }, "temp": 57 },
+            { "id": "medium",      "label": "Medium",      "labels": { "nl": "Medium" },      "temp": 63 }
+          ]
+        },
+        {
+          "id": "shoulder",
+          "label": "Shoulder",
+          "labels": { "nl": "Schouder" },
+          "doneness": [
+            { "id": "fall_apart", "label": "Fall Apart", "labels": { "nl": "Uiteenvallend" }, "temp": 85 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "other",
+      "label": "Other",
+      "labels": { "nl": "Overig" },
+      "icon": "🍖",
+      "cuts": [
+        {
+          "id": "fillet",
+          "label": "Fish / Salmon",
+          "labels": { "nl": "Vis / Zalm" },
+          "doneness": [
+            { "id": "medium_rare", "label": "Medium Rare", "labels": { "nl": "Medium rare" }, "temp": 52 },
+            { "id": "medium",      "label": "Medium",      "labels": { "nl": "Medium" },      "temp": 60 }
+          ]
+        },
+        {
+          "id": "other",
+          "label": "Other",
+          "labels": { "nl": "Overig" },
+          "doneness": [
+            { "id": "medium",    "label": "Medium",    "labels": { "nl": "Medium" },     "temp": 70 },
+            { "id": "well_done", "label": "Well Done", "labels": { "nl": "Doorbakken" }, "temp": 75 }
+          ]
+        }
+      ]
+    }
+  ]
+}

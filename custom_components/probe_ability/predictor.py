@@ -93,6 +93,10 @@ class CookPredictor:
         self._eta_history_min = 4  # need this many fresh ETAs before confidence can rise
         self._eta_std_high = 90.0  # ETA std-dev (s) below which confidence may be high
         self._eta_std_medium = 420.0  # ...below which confidence may be medium
+        self._linear_max_seconds = 4 * 3600  # linear ETA beyond this = rate is noise
+        self._jump_reject_limit = 4  # consecutive implausible jumps before accepting
+        self._jump_rejects = 0
+        self._last_reject_ts: float | None = None
 
     @property
     def target_temp(self) -> float:
@@ -234,6 +238,10 @@ class CookPredictor:
                 message="Stall detected; estimate may be inaccurate",
                 confidence=confidence,
             )
+            if result.time_remaining_seconds is not None:
+                result.time_remaining_seconds = self._gate_fresh(
+                    result.time_remaining_seconds, now_ts
+                )
             if result.time_remaining_seconds is not None and result.time_remaining_seconds > 0:
                 smoothed = self._smooth(result.time_remaining_seconds)
                 self._last_stable_remaining = smoothed
@@ -258,6 +266,8 @@ class CookPredictor:
             remaining = self._exponential_estimate(windowed, avg_ambient, current_temp)
             used_model = "physics"
 
+        if remaining is not None:
+            remaining = self._gate_fresh(remaining, now_ts)
         if remaining is not None and remaining > 0:
             remaining = self._smooth(remaining)
             self._last_stable_remaining = remaining
@@ -278,6 +288,10 @@ class CookPredictor:
             message="Exponential fit failed; using linear estimate",
             confidence=confidence,
         )
+        if result.time_remaining_seconds is not None:
+            result.time_remaining_seconds = self._gate_fresh(
+                result.time_remaining_seconds, now_ts
+            )
         if result.time_remaining_seconds is not None and result.time_remaining_seconds > 0:
             smoothed = self._smooth(result.time_remaining_seconds)
             self._last_stable_remaining = smoothed
@@ -386,6 +400,30 @@ class CookPredictor:
         dt_min = (window[-1][0] - window[0][0]) / 60.0
         ambient_rise_rate = (window[-1][2] - window[0][2]) / dt_min
         return ambient_rise_rate <= self._unreachable_rise_rate
+
+    def _gate_fresh(self, fresh: float, now_ts: float) -> float | None:
+        """Reject a fresh estimate that leaps implausibly above the last one.
+
+        Stall exits produce near-zero heating rates whose extrapolations can
+        claim many extra hours in a single step; accepting one such value
+        poisons the EMA and the stale-serving baseline for minutes afterwards.
+        A genuine slowdown re-asserts itself on every subsequent reading, so
+        after _jump_reject_limit consecutive rejected readings the new level
+        is accepted as real.
+        """
+        base = self._last_stable_remaining
+        if base is None:
+            self._jump_rejects = 0
+            return fresh
+        cap = max(base * 2.0, base + 1800.0)
+        if fresh > cap:
+            if self._last_reject_ts != now_ts:  # count once per reading
+                self._jump_rejects += 1
+                self._last_reject_ts = now_ts
+            if self._jump_rejects <= self._jump_reject_limit:
+                return None
+        self._jump_rejects = 0
+        return fresh
 
     def _serve_stale(self, now_ts: float) -> float | None:
         """Return a decayed version of the last stable estimate, or None.
@@ -572,9 +610,22 @@ class CookPredictor:
         message: str = "",
         confidence: str = "low",
     ) -> PredictionResult:
-        """Fallback linear extrapolation."""
+        """Fallback linear extrapolation.
+
+        A projection beyond _linear_max_seconds means the rate is noise
+        relative to the remaining gap (typical at stall entry/exit) — no
+        estimate is more honest than a many-hour extrapolation.
+        """
         if rate is not None and rate > 0.001:
             remaining = (self._target_temp - current_temp) / rate * 60
+            if remaining > self._linear_max_seconds:
+                return PredictionResult(
+                    phase=phase,
+                    rate_per_minute=rate,
+                    confidence=confidence,
+                    prediction_model="physics",
+                    message=message or "Insufficient trend to estimate",
+                )
             return PredictionResult(
                 time_remaining_seconds=remaining,
                 eta_timestamp=now_ts + remaining,

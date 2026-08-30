@@ -1,5 +1,5 @@
 /**
- * Probe-ability Card v0.9.2
+ * Probe-ability Card v0.9.3
  *
  * Custom Lovelace card for the Probe-ability integration.
  * Shows cook status, predictions, and lets you start/stop cooks.
@@ -23,7 +23,7 @@
  *   entry_id: <your_entry_id>                               (optional)
  */
 
-const CARD_VERSION = "0.9.2";
+const CARD_VERSION = "0.9.3";
 
 // ─── Localisation ────────────────────────────────────────────────────────────
 //
@@ -477,11 +477,14 @@ class CookPredictorCard extends HTMLElement {
         return;
       }
 
-      // 2. Skip if nothing that affects the idle view has changed.
+      // 2. Skip if nothing that affects the idle view has changed — but a
+      //    change to a linked target helper must still trigger a re-render so
+      //    the idle target temp follows it.
       if (prev) {
         const ps = prev.states[entity];
         const pa = ps?.attributes || {};
-        if (!pa.active && !na.active && pa.probe_count === na.probe_count) {
+        if (!pa.active && !na.active && pa.probe_count === na.probe_count &&
+            !this._targetHelpersChanged(prev, hass)) {
           return;
         }
       }
@@ -516,8 +519,13 @@ class CookPredictorCard extends HTMLElement {
   }
 
   // Returns { category, cut, doneness, temp } for a slot.
+  // When a target helper is linked, its live value is the source of truth for
+  // `temp` and overrides any stored idle temp — so changing the input_number
+  // (dashboard, automation) is reflected in the card.
   _slotState(key) {
-    return this._idleState[key] || { category: null, cut: null, doneness: null, temp: this._defaultTemp(key) };
+    const base = this._idleState[key] || { category: null, cut: null, doneness: null, temp: this._defaultTemp(key) };
+    const linked = this._linkedTargetTemp(key);
+    return linked != null ? { ...base, temp: linked } : base;
   }
 
   // Map a slot key to its probe index (0-based).
@@ -552,6 +560,16 @@ class CookPredictorCard extends HTMLElement {
   _defaultTemp(key) {
     const linked = this._linkedTargetTemp(key);
     return linked != null ? linked : 74;
+  }
+
+  // True if any configured target helper's state differs between two hass
+  // objects — used to force an idle re-render when the input_number changes.
+  _targetHelpersChanged(prev, next) {
+    for (const entity of this._targetTempEntities || []) {
+      if (!entity) continue;
+      if (prev.states[entity]?.state !== next.states[entity]?.state) return true;
+    }
+    return false;
   }
 
   // Write the chosen target back to that slot's linked helper so the card and
@@ -913,7 +931,7 @@ class CookPredictorCard extends HTMLElement {
   //   opts.isIndividual — if true, calls start_cook with probe_mode:"individual"
   //   opts.probeIndex  — probe index for individual mode
   _wireIdleSlot(stateKey, idSuffix, opts = {}) {
-    const getS = () => this._idleState[stateKey] || { category: null, cut: null, doneness: null, temp: this._defaultTemp(stateKey) };
+    const getS = () => this._slotState(stateKey);
     const upd = (patch) => {
       this._idleState[stateKey] = { ...getS(), ...patch };
       this._persistIdleState();

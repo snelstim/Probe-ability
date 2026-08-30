@@ -104,6 +104,7 @@ entity: sensor.probe_ability_time_remaining
 | `entry_id` | No | Config entry ID, only needed when you have **multiple instances** of the integration installed. See [Multiple instances](#multiple-instances) |
 | `probe_sensors` | No | List of internal probe sensor entity IDs; enables per-probe availability checking in the card UI. See [Probe availability](#probe-availability). |
 | `ambient_sensor` | No | Ambient (oven/smoker) sensor entity ID. If set, the card blocks starting a cook until this sensor is available and returning a valid reading. The ambient temperature displayed in the card comes from the backend sensor attributes regardless of this setting. |
+| `target_temp_entity` | No | An `input_number` entity to link the card's target temperature to. The card uses its value as the default target and writes changes back to it, so the card and a history-graph target line stay in sync — including **before** a cook starts. See [Linking the target temperature](#linking-the-target-temperature). |
 
 #### How each option works in detail
 
@@ -123,6 +124,24 @@ The ambient temperature shown in the card header comes from the `ambient_temp` a
 
 Without `probe_sensors` configured, the card assumes all probes reported by the backend are present. When configured, the card reads each sensor's state directly and hides any probe that is `unavailable`, `unknown`, or returning `0` — so a disconnected probe disappears from the UI rather than showing stale data. Recommended for multi-probe setups so the card accurately reflects which probes are actually connected.
 
+#### Linking the target temperature
+
+If you also plot your cook on a history graph, that graph's target line usually needs an
+`input_number` helper — which means keeping the target in two places and syncing them by hand.
+Set `target_temp_entity` to that `input_number` to make it the single source of truth:
+
+- **Read:** the card uses the `input_number`'s value as the default target temperature in the
+  idle form (in the card's displayed unit). Change the helper — e.g. from a dashboard slider or
+  an automation — and the card's default follows, even before the cook starts.
+- **Write:** whenever you change the target in the card (type a value, pick a doneness preset, or
+  start a cook) the card writes it back to the `input_number` via `input_number.set_value`, so the
+  graph's target line updates automatically.
+
+Only `input_number` entities are supported (they are the only settable numeric helper). Selecting
+a doneness preset still overrides the target with the preset's temperature, as before. During a
+running cook you can keep the model's target in sync from an automation using the
+`probe_ability.set_target` action.
+
 ### Minimal (single instance)
 
 ```yaml
@@ -138,6 +157,7 @@ entity: sensor.probe_ability_time_remaining
 eta_entity: sensor.probe_ability_estimated_completion
 entry_id: abc123def456
 ambient_sensor: sensor.smoker_ambient_temperature
+target_temp_entity: input_number.cook_target_temperature
 probe_sensors:
   - sensor.probe_1_temperature
   - sensor.probe_2_temperature

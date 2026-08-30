@@ -104,7 +104,9 @@ entity: sensor.probe_ability_time_remaining
 | `entry_id` | No | Config entry ID, only needed when you have **multiple instances** of the integration installed. See [Multiple instances](#multiple-instances) |
 | `probe_sensors` | No | List of internal probe sensor entity IDs; enables per-probe availability checking in the card UI. See [Probe availability](#probe-availability). |
 | `ambient_sensor` | No | Ambient (oven/smoker) sensor entity ID. If set, the card blocks starting a cook until this sensor is available and returning a valid reading. The ambient temperature displayed in the card comes from the backend sensor attributes regardless of this setting. |
-| `target_temp_entity` | No | An `input_number` entity to link the card's target temperature to. The card uses its value as the default target and writes changes back to it, so the card and a history-graph target line stay in sync — including **before** a cook starts. See [Linking the target temperature](#linking-the-target-temperature). |
+| `target_temp_entity` | No | An `input_number` entity to link the card's target temperature to (probe 1 / combined mode). The card uses its value as the default target and writes changes back to it, so the card and a history-graph target line stay in sync — including **before** a cook starts. See [Linking the target temperature](#linking-the-target-temperature). |
+| `target_temp_entity_2` | No | Target-temp `input_number` for **probe 2** (individual mode). |
+| `target_temp_entity_3` | No | Target-temp `input_number` for **probe 3** (individual mode). |
 
 #### How each option works in detail
 
@@ -136,6 +138,12 @@ Set `target_temp_entity` to that `input_number` to make it the single source of 
 - **Write:** whenever you change the target in the card (type a value, pick a doneness preset, or
   start a cook) the card writes it back to the `input_number` via `input_number.set_value`, so the
   graph's target line updates automatically.
+
+**Multiple probes.** Each probe has its own target, so each has its own optional helper:
+`target_temp_entity` covers probe 1 (and combined mode, where all probes share one target),
+while `target_temp_entity_2` and `target_temp_entity_3` cover probes 2 and 3 in individual mode.
+Leave any of them empty to leave that probe unlinked. A single-probe setup only needs
+`target_temp_entity`.
 
 Only `input_number` entities are supported (they are the only settable numeric helper). Selecting
 a doneness preset still overrides the target with the preset's temperature, as before. During a

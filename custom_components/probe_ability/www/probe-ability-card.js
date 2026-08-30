@@ -1,5 +1,5 @@
 /**
- * Probe-ability Card v0.9.1
+ * Probe-ability Card v0.9.2
  *
  * Custom Lovelace card for the Probe-ability integration.
  * Shows cook status, predictions, and lets you start/stop cooks.
@@ -23,7 +23,7 @@
  *   entry_id: <your_entry_id>                               (optional)
  */
 
-const CARD_VERSION = "0.9.1";
+const CARD_VERSION = "0.9.2";
 
 // ─── Localisation ────────────────────────────────────────────────────────────
 //
@@ -104,7 +104,9 @@ const I18N = {
     ed_entity: "Time remaining entity (required)",
     ed_eta: "ETA entity (optional)",
     ed_ambient: "Ambient sensor (optional)",
-    ed_target_entity: "Target temperature input_number (optional)",
+    ed_target_entity: "Target temperature input_number — probe 1 / combined (optional)",
+    ed_target_entity_2: "Target temperature input_number — probe 2 (optional)",
+    ed_target_entity_3: "Target temperature input_number — probe 3 (optional)",
     ed_probe1: "Probe 1 sensor (optional)",
     ed_probe2: "Probe 2 sensor (optional)",
     ed_probe3: "Probe 3 sensor (optional)",
@@ -178,7 +180,9 @@ const I18N = {
     ed_entity: "Time remaining-entiteit (verplicht)",
     ed_eta: "ETA-entiteit (optioneel)",
     ed_ambient: "Omgevingssensor (optioneel)",
-    ed_target_entity: "Doeltemperatuur-input_number (optioneel)",
+    ed_target_entity: "Doeltemperatuur-input_number — probe 1 / gecombineerd (optioneel)",
+    ed_target_entity_2: "Doeltemperatuur-input_number — probe 2 (optioneel)",
+    ed_target_entity_3: "Doeltemperatuur-input_number — probe 3 (optioneel)",
     ed_probe1: "Probe 1-sensor (optioneel)",
     ed_probe2: "Probe 2-sensor (optioneel)",
     ed_probe3: "Probe 3-sensor (optioneel)",
@@ -414,7 +418,12 @@ class CookPredictorCard extends HTMLElement {
     this._hass = null;
     this._probeSensors = config.probe_sensors || [];
     this._ambientSensor = config.ambient_sensor || null;
-    this._targetTempEntity = config.target_temp_entity || null;
+    // Per-probe target-temp helpers (index 0 = probe 1 / combined mode).
+    this._targetTempEntities = [
+      config.target_temp_entity   || null,
+      config.target_temp_entity_2 || null,
+      config.target_temp_entity_3 || null,
+    ];
     // Per-slot form state: { category, cut, doneness, temp }
     // Key: "combined" or probe index 0/1/2.
     // Backed by localStorage so selections survive page navigation.
@@ -508,36 +517,55 @@ class CookPredictorCard extends HTMLElement {
 
   // Returns { category, cut, doneness, temp } for a slot.
   _slotState(key) {
-    return this._idleState[key] || { category: null, cut: null, doneness: null, temp: this._defaultTemp() };
+    return this._idleState[key] || { category: null, cut: null, doneness: null, temp: this._defaultTemp(key) };
   }
 
-  // Default idle target temperature (internal °C).  When a target_temp_entity
-  // (an input_number shared with e.g. a history-graph target line) is linked,
-  // its value is the source of truth; otherwise fall back to 74 °C.
-  _linkedTargetTemp() {
-    if (!this._targetTempEntity || !this._hass) return null;
-    const s = this._hass.states[this._targetTempEntity];
+  // Map a slot key to its probe index (0-based).
+  //   "combined" → 0 (probe 1's helper), number i → i,
+  //   "sp-2"/"idle-1"/… → trailing digit.
+  _probeIndexForKey(key) {
+    if (key === "combined") return 0;
+    if (typeof key === "number") return key;
+    const m = /(\d+)\s*$/.exec(String(key));
+    return m ? parseInt(m[1], 10) : 0;
+  }
+
+  // The linked input_number for a slot, or null. Probe 1 / combined use
+  // target_temp_entity; probes 2 and 3 use target_temp_entity_2 / _3.
+  _targetEntityFor(key) {
+    const idx = this._probeIndexForKey(key);
+    return (this._targetTempEntities && this._targetTempEntities[idx]) || null;
+  }
+
+  // Default idle target temperature (internal °C) for a slot. When that slot's
+  // target helper (an input_number shared with e.g. a history-graph target
+  // line) is linked, its value is the source of truth; otherwise 74 °C.
+  _linkedTargetTemp(key) {
+    const entity = this._targetEntityFor(key);
+    if (!entity || !this._hass) return null;
+    const s = this._hass.states[entity];
     const v = s && parseFloat(s.state);
     if (!s || v == null || isNaN(v)) return null;
     return _fromDisp(v, this._tempUnit || "C");
   }
 
-  _defaultTemp() {
-    const linked = this._linkedTargetTemp();
+  _defaultTemp(key) {
+    const linked = this._linkedTargetTemp(key);
     return linked != null ? linked : 74;
   }
 
-  // Write the chosen target back to the linked entity so the card and any
-  // history-graph target line stay in sync.  Only input_number is settable.
-  _syncTargetTemp(tempC) {
-    if (!this._targetTempEntity || !this._hass) return;
-    if (this._targetTempEntity.split(".")[0] !== "input_number") return;
+  // Write the chosen target back to that slot's linked helper so the card and
+  // any history-graph target line stay in sync. Only input_number is settable.
+  _syncTargetTemp(key, tempC) {
+    const entity = this._targetEntityFor(key);
+    if (!entity || !this._hass) return;
+    if (entity.split(".")[0] !== "input_number") return;
     const disp = _toDisp(tempC, this._tempUnit || "C");
-    const cur = this._hass.states[this._targetTempEntity];
+    const cur = this._hass.states[entity];
     // Avoid a write→state-change→write feedback loop.
     if (cur && parseFloat(cur.state) === disp) return;
     this._hass.callService("input_number", "set_value", {
-      entity_id: this._targetTempEntity,
+      entity_id: entity,
       value: disp,
     });
   }
@@ -885,7 +913,7 @@ class CookPredictorCard extends HTMLElement {
   //   opts.isIndividual — if true, calls start_cook with probe_mode:"individual"
   //   opts.probeIndex  — probe index for individual mode
   _wireIdleSlot(stateKey, idSuffix, opts = {}) {
-    const getS = () => this._idleState[stateKey] || { category: null, cut: null, doneness: null, temp: this._defaultTemp() };
+    const getS = () => this._idleState[stateKey] || { category: null, cut: null, doneness: null, temp: this._defaultTemp(stateKey) };
     const upd = (patch) => {
       this._idleState[stateKey] = { ...getS(), ...patch };
       this._persistIdleState();
@@ -894,7 +922,7 @@ class CookPredictorCard extends HTMLElement {
     // Category pill buttons — use targeted form refresh to avoid scroll jumps
     this.querySelectorAll(`button[data-action="cat"][data-slot="${idSuffix}"]`).forEach((btn) => {
       btn.addEventListener("click", () => {
-        upd({ category: btn.dataset.val, cut: null, doneness: null, temp: this._defaultTemp() });
+        upd({ category: btn.dataset.val, cut: null, doneness: null, temp: this._defaultTemp(stateKey) });
         this._refreshForm(idSuffix, stateKey, opts);
       });
     });
@@ -931,7 +959,7 @@ class CookPredictorCard extends HTMLElement {
         const temp = donObj?.temp ?? s.temp;  // always °C
         upd({ doneness: donEl.value, temp });
         if (targetEl) targetEl.value = _toDisp(temp, unit);
-        this._syncTargetTemp(temp);
+        this._syncTargetTemp(stateKey, temp);
       });
     }
 
@@ -942,7 +970,7 @@ class CookPredictorCard extends HTMLElement {
         if (!isNaN(dispVal)) {
           const temp = _fromDisp(dispVal, unit);
           upd({ temp });
-          this._syncTargetTemp(temp);
+          this._syncTargetTemp(stateKey, temp);
         }
       });
     }
@@ -958,7 +986,7 @@ class CookPredictorCard extends HTMLElement {
         // by probe index — finds it.  Combined has no probeIndex → "combined".
         const presetKey = opts.probeIndex != null ? opts.probeIndex : stateKey;
         this._saveActivePreset(presetKey, cookName);
-        this._syncTargetTemp(s.temp);
+        this._syncTargetTemp(stateKey, s.temp);
         if (opts.isIndividual) {
           this._callStart({
             target_temp: s.temp,
@@ -1623,7 +1651,7 @@ class CookPredictorCard extends HTMLElement {
         const s = this._slotState(i);
         const cookName = _makeCookName(s.category, s.cut, s.doneness);
         this._saveActivePreset(i, cookName);
-        this._syncTargetTemp(s.temp);
+        this._syncTargetTemp(i, s.temp);
         this._callStart({ target_temp: s.temp, probe_mode: "individual", probe_index: i, cook_name: cookName });
       });
     });
@@ -1766,7 +1794,9 @@ const EDITOR_SCHEMA = [
   { name: "entity",         tkey: "ed_entity",  selector: { entity: {} } },
   { name: "eta_entity",     tkey: "ed_eta",     selector: { entity: {} } },
   { name: "ambient_sensor", tkey: "ed_ambient", selector: { entity: {} } },
-  { name: "target_temp_entity", tkey: "ed_target_entity", selector: { entity: { domain: "input_number" } } },
+  { name: "target_temp_entity",   tkey: "ed_target_entity",   selector: { entity: { domain: "input_number" } } },
+  { name: "target_temp_entity_2", tkey: "ed_target_entity_2", selector: { entity: { domain: "input_number" } } },
+  { name: "target_temp_entity_3", tkey: "ed_target_entity_3", selector: { entity: { domain: "input_number" } } },
   { name: "probe_sensor_0", tkey: "ed_probe1",  selector: { entity: {} } },
   { name: "probe_sensor_1", tkey: "ed_probe2",  selector: { entity: {} } },
   { name: "probe_sensor_2", tkey: "ed_probe3",  selector: { entity: {} } },
@@ -1788,9 +1818,12 @@ class CookPredictorCardEditor extends HTMLElement {
   _toFormData(cfg) {
     const ps = cfg.probe_sensors || [];
     return {
-      entity:         cfg.entity         || "",
-      eta_entity:     cfg.eta_entity     || "",
-      ambient_sensor: cfg.ambient_sensor || "",
+      entity:            cfg.entity            || "",
+      eta_entity:        cfg.eta_entity        || "",
+      ambient_sensor:    cfg.ambient_sensor    || "",
+      target_temp_entity:   cfg.target_temp_entity   || "",
+      target_temp_entity_2: cfg.target_temp_entity_2 || "",
+      target_temp_entity_3: cfg.target_temp_entity_3 || "",
       probe_sensor_0: ps[0]              || "",
       probe_sensor_1: ps[1]              || "",
       probe_sensor_2: ps[2]              || "",
@@ -1808,6 +1841,12 @@ class CookPredictorCardEditor extends HTMLElement {
     else                     delete cfg.eta_entity;
     if (data.ambient_sensor) cfg.ambient_sensor = data.ambient_sensor;
     else                     delete cfg.ambient_sensor;
+    if (data.target_temp_entity)   cfg.target_temp_entity   = data.target_temp_entity;
+    else                           delete cfg.target_temp_entity;
+    if (data.target_temp_entity_2) cfg.target_temp_entity_2 = data.target_temp_entity_2;
+    else                           delete cfg.target_temp_entity_2;
+    if (data.target_temp_entity_3) cfg.target_temp_entity_3 = data.target_temp_entity_3;
+    else                           delete cfg.target_temp_entity_3;
     const probes = [data.probe_sensor_0, data.probe_sensor_1, data.probe_sensor_2].filter(Boolean);
     if (probes.length)       cfg.probe_sensors  = probes;
     else                     delete cfg.probe_sensors;

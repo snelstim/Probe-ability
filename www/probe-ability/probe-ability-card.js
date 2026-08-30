@@ -1824,7 +1824,7 @@ class CookPredictorCard extends HTMLElement {
 function _buildEditorSchema() {
   return [
     {
-      type: "expandable", name: "sec_general", title: t("ed_sec_general"),
+      type: "expandable", title: t("ed_sec_general"),
       icon: "mdi:cog", expanded: true,
       schema: [
         { name: "entity",         tkey: "ed_entity",  selector: { entity: {} } },
@@ -1834,7 +1834,7 @@ function _buildEditorSchema() {
       ],
     },
     {
-      type: "expandable", name: "sec_probe1", title: t("ed_sec_probe1"),
+      type: "expandable", title: t("ed_sec_probe1"),
       icon: "mdi:thermometer", expanded: false,
       schema: [
         { name: "target_temp_entity", tkey: "ed_target_entity", selector: { entity: { domain: "input_number" } } },
@@ -1842,7 +1842,7 @@ function _buildEditorSchema() {
       ],
     },
     {
-      type: "expandable", name: "sec_probe2", title: t("ed_sec_probe2"),
+      type: "expandable", title: t("ed_sec_probe2"),
       icon: "mdi:thermometer", expanded: false,
       schema: [
         { name: "target_temp_entity_2", tkey: "ed_target_entity_2", selector: { entity: { domain: "input_number" } } },
@@ -1850,7 +1850,7 @@ function _buildEditorSchema() {
       ],
     },
     {
-      type: "expandable", name: "sec_probe3", title: t("ed_sec_probe3"),
+      type: "expandable", title: t("ed_sec_probe3"),
       icon: "mdi:thermometer", expanded: false,
       schema: [
         { name: "target_temp_entity_3", tkey: "ed_target_entity_3", selector: { entity: { domain: "input_number" } } },

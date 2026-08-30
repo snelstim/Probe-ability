@@ -573,3 +573,11 @@ Test the prediction algorithm standalone, without running Home Assistant:
 ```bash
 python3 test_predictor.py
 ```
+
+---
+
+## Support
+
+If Probe-ability saved your brisket, consider a small donation — my cardiologist says I can't keep funding this research with my arteries alone.
+
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20the%20research-FF5E5B?logo=ko-fi&logoColor=white)](https://ko-fi.com/snelstim)

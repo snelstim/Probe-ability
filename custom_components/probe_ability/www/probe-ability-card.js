@@ -1,5 +1,5 @@
 /**
- * Probe-ability Card v0.9.3
+ * Probe-ability Card v0.9.4
  *
  * Custom Lovelace card for the Probe-ability integration.
  * Shows cook status, predictions, and lets you start/stop cooks.
@@ -23,7 +23,7 @@
  *   entry_id: <your_entry_id>                               (optional)
  */
 
-const CARD_VERSION = "0.9.3";
+const CARD_VERSION = "0.9.4";
 
 // ─── Localisation ────────────────────────────────────────────────────────────
 //
@@ -101,6 +101,10 @@ const I18N = {
     switch_to_countdown: "Switch to countdown view",
     hours_short: "h",
     minutes_short: "m",
+    ed_sec_general: "General",
+    ed_sec_probe1: "Probe 1",
+    ed_sec_probe2: "Probe 2",
+    ed_sec_probe3: "Probe 3",
     ed_entity: "Time remaining entity (required)",
     ed_eta: "ETA entity (optional)",
     ed_ambient: "Ambient sensor (optional)",
@@ -177,6 +181,10 @@ const I18N = {
     switch_to_countdown: "Naar aftelweergave",
     hours_short: "u",
     minutes_short: "m",
+    ed_sec_general: "Algemeen",
+    ed_sec_probe1: "Probe 1",
+    ed_sec_probe2: "Probe 2",
+    ed_sec_probe3: "Probe 3",
     ed_entity: "Time remaining-entiteit (verplicht)",
     ed_eta: "ETA-entiteit (optioneel)",
     ed_ambient: "Omgevingssensor (optioneel)",
@@ -1808,18 +1816,49 @@ class CookPredictorCard extends HTMLElement {
 
 // `tkey` maps each field to an I18N key; the label is resolved at render time
 // via computeLabel so the editor follows the user's language.
-const EDITOR_SCHEMA = [
-  { name: "entity",         tkey: "ed_entity",  selector: { entity: {} } },
-  { name: "eta_entity",     tkey: "ed_eta",     selector: { entity: {} } },
-  { name: "ambient_sensor", tkey: "ed_ambient", selector: { entity: {} } },
-  { name: "target_temp_entity",   tkey: "ed_target_entity",   selector: { entity: { domain: "input_number" } } },
-  { name: "target_temp_entity_2", tkey: "ed_target_entity_2", selector: { entity: { domain: "input_number" } } },
-  { name: "target_temp_entity_3", tkey: "ed_target_entity_3", selector: { entity: { domain: "input_number" } } },
-  { name: "probe_sensor_0", tkey: "ed_probe1",  selector: { entity: {} } },
-  { name: "probe_sensor_1", tkey: "ed_probe2",  selector: { entity: {} } },
-  { name: "probe_sensor_2", tkey: "ed_probe3",  selector: { entity: {} } },
-  { name: "entry_id",       tkey: "ed_entry",   selector: { text: {} } },
-];
+//
+// Fields are grouped into collapsible `expandable` sections (General + one per
+// probe). Expandable groups are purely visual — the form data stays flat, so
+// _toFormData / _fromFormData are unaffected. Section titles are resolved here
+// because ha-form reads a section's `title` directly (not via computeLabel).
+function _buildEditorSchema() {
+  return [
+    {
+      type: "expandable", name: "sec_general", title: t("ed_sec_general"),
+      icon: "mdi:cog", expanded: true,
+      schema: [
+        { name: "entity",         tkey: "ed_entity",  selector: { entity: {} } },
+        { name: "eta_entity",     tkey: "ed_eta",     selector: { entity: {} } },
+        { name: "ambient_sensor", tkey: "ed_ambient", selector: { entity: {} } },
+        { name: "entry_id",       tkey: "ed_entry",   selector: { text: {} } },
+      ],
+    },
+    {
+      type: "expandable", name: "sec_probe1", title: t("ed_sec_probe1"),
+      icon: "mdi:thermometer", expanded: false,
+      schema: [
+        { name: "target_temp_entity", tkey: "ed_target_entity", selector: { entity: { domain: "input_number" } } },
+        { name: "probe_sensor_0",     tkey: "ed_probe1",        selector: { entity: {} } },
+      ],
+    },
+    {
+      type: "expandable", name: "sec_probe2", title: t("ed_sec_probe2"),
+      icon: "mdi:thermometer", expanded: false,
+      schema: [
+        { name: "target_temp_entity_2", tkey: "ed_target_entity_2", selector: { entity: { domain: "input_number" } } },
+        { name: "probe_sensor_1",       tkey: "ed_probe2",          selector: { entity: {} } },
+      ],
+    },
+    {
+      type: "expandable", name: "sec_probe3", title: t("ed_sec_probe3"),
+      icon: "mdi:thermometer", expanded: false,
+      schema: [
+        { name: "target_temp_entity_3", tkey: "ed_target_entity_3", selector: { entity: { domain: "input_number" } } },
+        { name: "probe_sensor_2",       tkey: "ed_probe3",          selector: { entity: {} } },
+      ],
+    },
+  ];
+}
 
 class CookPredictorCardEditor extends HTMLElement {
   setConfig(config) {
@@ -1894,7 +1933,7 @@ class CookPredictorCardEditor extends HTMLElement {
     }
 
     form.hass   = this._hass;
-    form.schema = EDITOR_SCHEMA;
+    form.schema = _buildEditorSchema();
     form.data   = this._toFormData(this._config);
   }
 }

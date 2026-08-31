@@ -1,5 +1,5 @@
 /**
- * Probe-ability Card v0.9.6
+ * Probe-ability Card v0.9.7
  *
  * Custom Lovelace card for the Probe-ability integration.
  * Shows cook status, predictions, and lets you start/stop cooks.
@@ -23,7 +23,7 @@
  *   entry_id: <your_entry_id>                               (optional)
  */
 
-const CARD_VERSION = "0.9.6";
+const CARD_VERSION = "0.9.7";
 
 // ─── Localisation ────────────────────────────────────────────────────────────
 //
@@ -582,6 +582,23 @@ class CookPredictorCard extends HTMLElement {
 
   // Write the chosen target back to that slot's linked helper so the card and
   // any history-graph target line stay in sync. Only input_number is settable.
+  // Clamp an internal-°C temp to the linked helper's min/max (which are
+  // expressed in the card's display unit). No-op when no helper is linked or
+  // its state/attributes are unavailable.
+  _clampToLinkedRange(key, tempC) {
+    const entity = this._targetEntityFor(key);
+    if (!entity || !this._hass) return tempC;
+    const cur = this._hass.states[entity];
+    if (!cur) return tempC;
+    const unit = this._tempUnit || "C";
+    const min = parseFloat(cur.attributes?.min);
+    const max = parseFloat(cur.attributes?.max);
+    let disp = _toDisp(tempC, unit);
+    if (!isNaN(min) && disp < min) disp = min;
+    if (!isNaN(max) && disp > max) disp = max;
+    return _fromDisp(disp, unit);
+  }
+
   _syncTargetTemp(key, tempC) {
     const entity = this._targetEntityFor(key);
     if (!entity || !this._hass) return;
@@ -590,6 +607,12 @@ class CookPredictorCard extends HTMLElement {
     const cur = this._hass.states[entity];
     // Avoid a write→state-change→write feedback loop.
     if (cur && parseFloat(cur.state) === disp) return;
+    // Respect the helper's configured min/max — writing outside it just throws
+    // an "Invalid value" error. Silently skip rather than spam the user.
+    const min = cur && parseFloat(cur.attributes?.min);
+    const max = cur && parseFloat(cur.attributes?.max);
+    if (min != null && !isNaN(min) && disp < min) return;
+    if (max != null && !isNaN(max) && disp > max) return;
     this._hass.callService("input_number", "set_value", {
       entity_id: entity,
       value: disp,
@@ -989,13 +1012,23 @@ class CookPredictorCard extends HTMLElement {
       });
     }
 
-    // Manual temp input — store in °C internally
+    // Manual temp input — store in °C internally.
+    // Update local state on every keystroke, but only write the linked helper
+    // on `change` (blur/Enter) so partial values ("5" while typing "55") aren't
+    // pushed — they'd fail an input_number min/max and spam error toasts.
     if (targetEl) {
       targetEl.addEventListener("input", (e) => {
         const dispVal = parseFloat(e.target.value);
+        if (!isNaN(dispVal)) upd({ temp: _fromDisp(dispVal, unit) });
+      });
+      targetEl.addEventListener("change", (e) => {
+        const dispVal = parseFloat(e.target.value);
         if (!isNaN(dispVal)) {
-          const temp = _fromDisp(dispVal, unit);
+          // Clamp to the linked helper's range so the card and the
+          // input_number can't diverge, and reflect the clamp in the field.
+          const temp = this._clampToLinkedRange(stateKey, _fromDisp(dispVal, unit));
           upd({ temp });
+          e.target.value = _toDisp(temp, unit);
           this._syncTargetTemp(stateKey, temp);
         }
       });

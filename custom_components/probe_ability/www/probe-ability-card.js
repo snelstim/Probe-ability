@@ -1,5 +1,5 @@
 /**
- * Probe-ability Card v0.9.7
+ * Probe-ability Card v0.9.8
  *
  * Custom Lovelace card for the Probe-ability integration.
  * Shows cook status, predictions, and lets you start/stop cooks.
@@ -23,7 +23,7 @@
  *   entry_id: <your_entry_id>                               (optional)
  */
 
-const CARD_VERSION = "0.9.7";
+const CARD_VERSION = "0.9.8";
 
 // ─── Localisation ────────────────────────────────────────────────────────────
 //
@@ -469,6 +469,20 @@ class CookPredictorCard extends HTMLElement {
     this._hass = hass;
     this._saveIdleFormState();
 
+    // Never rebuild the card while the user is interacting with a form control
+    // (category/cut/doneness dropdown or the temp input) — a re-render would
+    // close an open dropdown or drop focus. This applies even when another probe
+    // is running, because the active-individual view still shows idle setup
+    // forms for the not-yet-started probes.
+    const focused = document.activeElement;
+    if (focused && this.contains(focused) &&
+        (focused.tagName === "SELECT" || focused.tagName === "INPUT")) {
+      return;
+    }
+
+    // Follow external changes to a linked target helper into stored idle temps.
+    this._applyLinkedTempChanges(prev, hass);
+
     const entity = this._config?.entity;
     const ns = hass.states[entity];
     const na = ns?.attributes || {};
@@ -476,18 +490,9 @@ class CookPredictorCard extends HTMLElement {
 
     if (isIdle) {
       // During idle the form is driven entirely by local state, not HA state.
-      // Rebuilding on every hass push destroys open dropdowns and focused inputs.
-
-      // 1. Skip if a form element in this card currently has focus.
-      const focused = document.activeElement;
-      if (focused && this.contains(focused) &&
-          (focused.tagName === "SELECT" || focused.tagName === "INPUT")) {
-        return;
-      }
-
-      // 2. Skip if nothing that affects the idle view has changed — but a
-      //    change to a linked target helper must still trigger a re-render so
-      //    the idle target temp follows it.
+      // Skip if nothing that affects the idle view has changed — but a change to
+      // a linked target helper must still trigger a re-render so the idle target
+      // temp follows it.
       if (prev) {
         const ps = prev.states[entity];
         const pa = ps?.attributes || {};
@@ -526,14 +531,33 @@ class CookPredictorCard extends HTMLElement {
     this._persistIdleState();
   }
 
-  // Returns { category, cut, doneness, temp } for a slot.
-  // When a target helper is linked, its live value is the source of truth for
-  // `temp` and overrides any stored idle temp — so changing the input_number
-  // (dashboard, automation) is reflected in the card.
+  // Returns { category, cut, doneness, temp } for a slot. A linked target
+  // helper seeds the default temp for a fresh slot (_defaultTemp) and external
+  // changes to it are pushed into stored state via _applyLinkedTempChanges — but
+  // it does NOT override here, so a chosen preset/manual temp always shows.
   _slotState(key) {
-    const base = this._idleState[key] || { category: null, cut: null, doneness: null, temp: this._defaultTemp(key) };
-    const linked = this._linkedTargetTemp(key);
-    return linked != null ? { ...base, temp: linked } : base;
+    return this._idleState[key] || { category: null, cut: null, doneness: null, temp: this._defaultTemp(key) };
+  }
+
+  // Reflect external changes to a linked target helper (dashboard/automation)
+  // into stored idle temps, so the card still follows the input_number without
+  // shadowing a locally chosen preset/manual value.
+  _applyLinkedTempChanges(prev, hass) {
+    if (!this._targetTempEntities || !prev) return;
+    let changed = false;
+    for (const key of Object.keys(this._idleState)) {
+      const entity = this._targetEntityFor(key);
+      if (!entity) continue;
+      const ns = hass.states[entity];
+      if (!ns) continue;
+      const ps = prev.states[entity];
+      if (ps && ps.state === ns.state) continue;   // unchanged externally
+      const v = parseFloat(ns.state);
+      if (isNaN(v)) continue;
+      this._idleState[key] = { ...this._idleState[key], temp: _fromDisp(v, this._tempUnit || "C") };
+      changed = true;
+    }
+    if (changed) this._persistIdleState();
   }
 
   // Map a slot key to its probe index (0-based).
@@ -986,7 +1010,9 @@ class CookPredictorCard extends HTMLElement {
         const cutObj = catObj?.cuts.find((c) => c.id === cutEl.value);
         if (cutObj && cutObj.doneness.length === 1) {
           // Single-doneness cut — auto-select it immediately
-          upd({ cut: cutEl.value, doneness: cutObj.doneness[0].id, temp: cutObj.doneness[0].temp });
+          const t = cutObj.doneness[0].temp;
+          upd({ cut: cutEl.value, doneness: cutObj.doneness[0].id, temp: t });
+          this._syncTargetTemp(stateKey, t);
         } else {
           upd({ cut: cutEl.value, doneness: null });
         }

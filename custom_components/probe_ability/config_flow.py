@@ -6,13 +6,22 @@ from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+    OptionsFlow,
+)
+from homeassistant.const import MAJOR_VERSION, MINOR_VERSION
+from homeassistant.core import callback
 from homeassistant.helpers.selector import (
     BooleanSelector,
     EntitySelector,
     EntitySelectorConfig,
+    SelectOptionDict,
     SelectSelector,
     SelectSelectorConfig,
+    SelectSelectorMode,
 )
 
 from .const import (
@@ -21,9 +30,11 @@ from .const import (
     CONF_INTERNAL_SENSOR,
     CONF_INTERNAL_SENSOR_2,
     CONF_INTERNAL_SENSOR_3,
+    CONF_LIVE_ACTIVITY_TARGETS,
     CONF_SHARE_DATA,
     CONF_TEMP_UNIT,
     DOMAIN,
+    LIVE_ACTIVITY_MIN_HA,
     TEMP_UNIT_CELSIUS,
     TEMP_UNIT_FAHRENHEIT,
 )
@@ -58,6 +69,12 @@ class CookPredictorConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Probe-ability."""
 
     VERSION = 1
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> ProbeAbilityOptionsFlow:
+        """Return the options flow (⋮ → Configure on the integration card)."""
+        return ProbeAbilityOptionsFlow()
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -100,4 +117,64 @@ class CookPredictorConfigFlow(ConfigFlow, domain=DOMAIN):
             data_schema=self.add_suggested_values_to_schema(
                 SETUP_SCHEMA, entry.data
             ),
+        )
+
+
+class ProbeAbilityOptionsFlow(OptionsFlow):
+    """Options: which Companion-app devices receive a cook-progress Live Activity.
+
+    Applied in place by the entry's update listener — no reload, so an
+    active cook is not interrupted.
+    """
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        if user_input is not None:
+            return self.async_create_entry(
+                title="",
+                data={
+                    CONF_LIVE_ACTIVITY_TARGETS: list(
+                        user_input.get(CONF_LIVE_ACTIVITY_TARGETS, [])
+                    )
+                },
+            )
+
+        current = list(self.config_entry.options.get(CONF_LIVE_ACTIVITY_TARGETS, []))
+        discovered = [
+            name
+            for name in self.hass.services.async_services_for_domain("notify")
+            if name.startswith("mobile_app_")
+        ]
+        # Keep currently selected services in the list even if the phone is
+        # not registered right now, so reopening the dialog never drops them.
+        options = [
+            SelectOptionDict(value=name, label=name)
+            for name in sorted(set(discovered) | set(current))
+        ]
+        schema = vol.Schema(
+            {
+                vol.Optional(CONF_LIVE_ACTIVITY_TARGETS, default=current): SelectSelector(
+                    SelectSelectorConfig(
+                        options=options,
+                        multiple=True,
+                        custom_value=True,
+                        mode=SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+            }
+        )
+
+        too_old = (MAJOR_VERSION, MINOR_VERSION) < LIVE_ACTIVITY_MIN_HA
+        note = (
+            " ⚠️ This Home Assistant is older than "
+            f"{LIVE_ACTIVITY_MIN_HA[0]}.{LIVE_ACTIVITY_MIN_HA[1]} — iOS Live Activities "
+            "will not work until you upgrade."
+            if too_old
+            else ""
+        )
+        return self.async_show_form(
+            step_id="init",
+            data_schema=schema,
+            description_placeholders={"ha_version_note": note},
         )

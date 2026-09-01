@@ -52,3 +52,9 @@ CONF_SHARE_DATA = "share_cook_data"
 # Supabase — anon key is intentionally public (INSERT-only via RLS)
 SUPABASE_URL = "https://hlsfrqvfhtauoyhugyou.supabase.co"
 SUPABASE_KEY = "sb_publishable_UaNANuzjnNgEP7wGaBARNg_lUbBrMjK"
+
+# Companion-app Live Activities — list of notify service names (without the
+# "notify." prefix), stored in entry.options via the options flow.
+CONF_LIVE_ACTIVITY_TARGETS = "live_activity_targets"
+# Minimum Home Assistant core version for the iOS Live Activity token handshake
+LIVE_ACTIVITY_MIN_HA = (2026, 7)

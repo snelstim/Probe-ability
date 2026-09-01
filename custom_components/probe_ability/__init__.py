@@ -16,7 +16,7 @@ import voluptuous as vol
 
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EVENT_HOMEASSISTANT_STOP, Platform
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, EVENT_HOMEASSISTANT_STOP, Platform
 from homeassistant.core import Event, HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
@@ -32,7 +32,9 @@ from .const import (
     CONF_INTERNAL_SENSOR,
     CONF_INTERNAL_SENSOR_2,
     CONF_INTERNAL_SENSOR_3,
+    CONF_LIVE_ACTIVITY_TARGETS,
     CONF_SHARE_DATA,
+    CONF_TEMP_UNIT,
     DEFAULT_COOK_NAME,
     DEFAULT_TARGET_TEMP,
     DOMAIN,
@@ -47,7 +49,9 @@ from .const import (
     SUPABASE_KEY,
     SUPABASE_URL,
     TARGET_REACHED_TOLERANCE_C,
+    TEMP_UNIT_CELSIUS,
 )
+from .live_activity import LiveActivityManager
 from .predictor import CookPredictor
 
 
@@ -94,7 +98,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not hass.services.has_service(DOMAIN, SERVICE_START_COOK):
         _register_services(hass)
 
+    # Options (Live Activity targets) apply in place — no entry reload
+    entry.async_on_unload(entry.add_update_listener(_async_options_updated))
+
     return True
+
+
+async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Apply changed options without reloading the entry (keeps an active cook intact)."""
+    monitor = _get_monitor(hass, entry.entry_id)
+    if monitor is None:
+        return
+    monitor.live_activity.set_targets(
+        list(entry.options.get(CONF_LIVE_ACTIVITY_TARGETS, [])), monitor
+    )
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -253,6 +270,15 @@ class CookMonitor:
         self._entities: list = []
         self._unsub_listeners: list = []
         self._store = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}")
+
+        # Companion-app Live Activities (opt-in via the options flow)
+        self.live_activity = LiveActivityManager(
+            hass,
+            entry.entry_id,
+            entry.data.get(CONF_TEMP_UNIT, TEMP_UNIT_CELSIUS),
+            list(entry.options.get(CONF_LIVE_ACTIVITY_TARGETS, [])),
+            _LOGGER,
+        )
 
     # ── Public properties ────────────────────────────────────────────────
 
@@ -451,6 +477,7 @@ class CookMonitor:
 
             if self.active:
                 self._start_listening()
+                self._schedule_live_activity_restore()
                 _LOGGER.info(
                     "Restored active cook (mode=%s, probes=%s)",
                     self.probe_mode,
@@ -462,6 +489,27 @@ class CookMonitor:
     def register_entity(self, entity) -> None:
         """Register a sensor entity for state updates."""
         self._entities.append(entity)
+
+    def _schedule_live_activity_restore(self) -> None:
+        """Re-push the Live Activity for a restored cook.
+
+        During boot the notify.mobile_app_* services may not be registered
+        yet, so wait for HA to finish starting.  The tag is stable, so this is
+        an update if the activity survived the restart and a fresh start if
+        it expired.
+        """
+        if not self.live_activity.enabled:
+            return
+
+        @callback
+        def _restore(_event: Event | None = None) -> None:
+            if self.active:
+                self.live_activity.refresh(self, force=True)
+
+        if self.hass.is_running:
+            _restore()
+        else:
+            self.hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _restore)
 
     # ── Cook control ─────────────────────────────────────────────────────
 
@@ -529,6 +577,7 @@ class CookMonitor:
 
         self._start_listening()
         self._notify_entities()
+        self.live_activity.refresh(self, force=True)
         self.hass.async_create_task(self.async_save())
 
     def stop_cook(self, probe_index: int | None = None) -> None:
@@ -615,6 +664,8 @@ class CookMonitor:
             self._stop_listening()
 
         self._notify_entities()
+        # Reconcile: clears the activities of probes that are no longer active
+        self.live_activity.refresh(self)
         self.hass.async_create_task(self.async_save())
 
     async def _async_export_csv(
@@ -793,6 +844,7 @@ class CookMonitor:
                 self.predictors[i].target_temp = target_temp
                 self.probe_target[i] = target_temp
         self._notify_entities()
+        self.live_activity.refresh(self, force=True)
 
     # ── Internal state management ────────────────────────────────────────
 
@@ -846,6 +898,7 @@ class CookMonitor:
             return
 
         # Update each active probe that has passed its debounce threshold
+        reading_added = False
         for i, sensor_id in enumerate(probe_sensors):
             if not self.probe_active[i]:
                 continue
@@ -864,6 +917,7 @@ class CookMonitor:
 
             self.predictors[i].add_reading(now, internal, ambient)
             self._last_reading_ts[i] = now
+            reading_added = True
 
         self._update_probe_disconnect_timestamps()
         if self._auto_stop_unsub is None and self.active:
@@ -872,6 +926,10 @@ class CookMonitor:
             )
 
         self._notify_entities()
+        # Only re-evaluate the Live Activity when a probe reading was actually
+        # recorded — this handler also fires for every ambient sensor change.
+        if reading_added:
+            self.live_activity.refresh(self)
 
     async def async_save(self, _event: Event | None = None) -> None:
         """Persist state to disk."""

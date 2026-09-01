@@ -79,6 +79,7 @@ The config flow is a one-time hardware setup. It does **not** ask for target tem
 | **Temperature unit** | No | Display unit for the card — Celsius (default) or Fahrenheit |
 | **Export cook data** | No | Save a CSV after every cook for local analysis/fine-tuning |
 | **Share anonymous cook data** | No | Opt-in: send completed cooks to improve the shared ML model (see [Anonymous data sharing](#anonymous-data-sharing)) |
+| **Live Activities** | No | Set after setup via **⋮ → Configure**: pick the phones that get a cook-progress Live Activity (see [Live Activities](#live-activities-companion-app)) |
 
 > **Tip:** All sensor entities must have the `temperature` device class. The entity selector in the config flow filters for this automatically.
 
@@ -434,6 +435,70 @@ script:
 
 ---
 
+## Live Activities (Companion app)
+
+Probe-ability can show the running cook as a **Live Activity** on your phone — on the iOS Lock Screen and Dynamic Island, or pinned to the top of the Android notification shade and always-on display. No automation needed: the integration starts, updates and ends the activity itself.
+
+<!-- ![Live Activity](docs/screenshots/live-activity.png) -->
+
+### Requirements
+
+- Home Assistant Companion app on **iOS 17.2+** or **Android 16+**
+- **Home Assistant 2026.7 or newer** for iOS (needed for the Live Activity token handshake; Android works on older cores)
+- The phone must be registered with the Companion app so it has a `notify.mobile_app_<phone>` action
+
+### Setup
+
+1. **Settings → Devices & services → Probe-ability → ⋮ → Configure**
+2. Pick one or more phones (`mobile_app_…`) and submit — no restart or reload needed
+3. Start a cook. The activity appears within a few seconds and disappears when you press **Stop** (or when the cook auto-stops)
+
+Selecting a phone while a cook is already running starts the activity immediately; deselecting it ends the activity on that phone.
+
+### What it shows
+
+| Element | Content |
+|---|---|
+| Title | The cook name (e.g. *Beef Brisket Fall Apart*). Fixed when the cook starts — Live Activities cannot change their title later. |
+| Chip | Current internal temperature in your configured unit |
+| Progress bar | Temperature progress from the start temperature to the target |
+| Countdown | Once a prediction exists (heating / stall / finishing), a countdown to the estimated finish that ticks on the phone itself. On the iOS Lock Screen the countdown replaces the message line. |
+| Message | Phase and temperatures, e.g. `Heating · 63.5° / 95.0°`, `Stall · …`, `Target unreachable · raise the heat · …`. Low-confidence predictions are marked. |
+| Icon / colour | Match the card: fire (heating), pause (stall), flag (finishing), check (done), fire-alert (unreachable) |
+
+When the target is reached the activity switches to **Target reached** at 100 % and stays there until you stop the cook.
+
+- **Combined mode** → one activity, driven by the slowest probe; it shows *done* only when every probe has reached target.
+- **Individual mode** → one activity per active probe, titled `<cook name> · Probe N`. iOS shows at most two in the Dynamic Island.
+
+### Update behaviour and limits
+
+Apple throttles Live Activity updates and drops them when they come too often, so Probe-ability only pushes when something meaningful changed:
+
+- immediately on start, phase change, target change and target reached
+- otherwise at most **once per minute**, and only when the temperature moved ≥ 0.5 °C, the progress percentage changed, or the estimated finish moved by ≥ 2 minutes
+- the countdown itself never needs a push — the phone counts down on its own
+
+iOS ends any Live Activity after **8 hours**. For long cooks Probe-ability rolls over to a fresh activity every 7 h 50 m (a 16-hour brisket uses two rollovers). Each rollover counts against iOS's push-to-start budget, which replenishes over time.
+
+The activity survives a Home Assistant restart: a running cook is restored and re-pushed once Home Assistant has finished starting.
+
+### Troubleshooting
+
+- **The phone is not in the list** — the Companion app has not registered a `notify.mobile_app_…` action yet. Open the app, check *Settings → Companion app → Notifications*, then reopen the Configure dialog. You can also type the service name by hand.
+- **Nothing appears on the phone** — check the Home Assistant version (iOS needs 2026.7+), that the phone has a working connection to Home Assistant (remote access is needed for the token handshake), and that Live Activities are allowed for the Companion app in the phone's settings. Samsung phones may need *Live notifications for all apps* enabled in developer options.
+- **Log lines** — enable debug logging to see every push:
+
+  ```yaml
+  logger:
+    logs:
+      custom_components.probe_ability: debug
+  ```
+
+  A selected phone whose notify action does not exist is logged as a warning once and skipped; it never interrupts the cook.
+
+---
+
 ## Data export
 
 Enable **Export cook data** in the config flow to automatically save a CSV file after every cook. Files are written to `config/probe_ability_exports/` and are named `cook_YYYYMMDD_HHMMSS_probeN.csv`.
@@ -572,6 +637,12 @@ Test the prediction algorithm standalone, without running Home Assistant:
 
 ```bash
 python3 test_predictor.py
+```
+
+Test the Live Activity payload and throttle logic:
+
+```bash
+python3 test_live_activity.py
 ```
 
 ---

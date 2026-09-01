@@ -122,6 +122,13 @@ class CookPredictor:
     def current_ambient(self) -> float | None:
         return self.readings[-1][2] if self.readings else None
 
+    @property
+    def start_temp(self) -> float | None:
+        """Internal temperature at the start of the cook (None before the first reading)."""
+        if self._start_temp is not None:
+            return self._start_temp
+        return self.readings[0][1] if self.readings else None
+
     def add_reading(
         self, timestamp: float, internal_temp: float, ambient_temp: float
     ) -> None:

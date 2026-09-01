@@ -16,7 +16,7 @@ Replace `nl` / `xx` with your [HA language code](https://www.home-assistant.io/i
 | 1 | Config flow, options, service descriptions, entity names, error toasts | `custom_components/probe_ability/translations/<lang>.json` | Home Assistant's built-in loader (automatic) |
 | 2 | The Lovelace card UI | `custom_components/probe_ability/www/probe-ability-card.js` → the `I18N` table | Card-owned string table |
 | 3 | Preset cut / doneness **display** names | `custom_components/probe_ability/www/cook_presets.json` → `labels` | Card-owned, display-only |
-| 4 | Auto-stop persistent notification | `custom_components/probe_ability/__init__.py` | Currently English only (see note) |
+| 4 | Auto-stop persistent notification, Live Activity text | `custom_components/probe_ability/__init__.py`, `custom_components/probe_ability/live_activity.py` | Currently English only (see note) |
 
 `strings.json` is the English source; `translations/en.json` is a copy of it. Keep the
 two in sync when you add or rename English keys.
@@ -72,12 +72,15 @@ Add your `xx` entry to the `labels` map. **Do not change the English `label`.**
 > **display-only**; the stored cook name and the ML feature lookup always stay English,
 > so translations never break prediction accuracy or the exported/shared data.
 
-### 4. The auto-stop notification (optional)
+### 4. The auto-stop notification and Live Activity text (optional)
 
-The "BBQ Cook Auto-Stopped" persistent notification in `__init__.py` is still English.
-Home Assistant has no first-class translation path for `persistent_notification.create`
-content, so it is intentionally left untranslated for now. The related start-cook error
-toasts *are* translated (see the `exceptions` section of the translation files).
+The "BBQ Cook Auto-Stopped" persistent notification in `__init__.py` and the Live
+Activity text in `live_activity.py` (`Heating · 63.5° / 95°`, `Target reached`, …) are
+still English. Home Assistant has no first-class translation path for
+`persistent_notification.create` or `notify` payload content, so they are intentionally
+left untranslated for now. The related start-cook error toasts and the Live Activity
+*options dialog* **are** translated (see the `exceptions` and `options` sections of the
+translation files).
 
 ## Verifying a translation
 
@@ -88,6 +91,8 @@ toasts *are* translated (see the `exceptions` section of the translation files).
    ```
 3. Add/reconfigure the integration and check the dialog, the temperature-unit dropdown,
    and the service descriptions under Developer Tools → Actions.
+   Open **⋮ → Configure** on the integration card and confirm the Live Activities dialog
+   is translated.
 4. Load the card and walk an idle → cook → done cycle; confirm the buttons, ring labels,
    and preset selector are translated.
 5. Start a cook from a preset and confirm the stored `cook_name` is still the canonical

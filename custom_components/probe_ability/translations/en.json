@@ -33,6 +33,20 @@
       "reconfigure_successful": "Configuration updated successfully."
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Live Activities (Companion app)",
+        "description": "Show a Live Activity on your phone while a cook is running: current temperature, progress bar and a countdown to the estimated finish. Requires the Home Assistant Companion app on iOS 17.2+ or Android 16+, and Home Assistant 2026.7 or newer for iOS.{ha_version_note}",
+        "data": {
+          "live_activity_targets": "Devices (notify.mobile_app_… services)"
+        },
+        "data_description": {
+          "live_activity_targets": "One Live Activity per selected device. Leave empty to disable."
+        }
+      }
+    }
+  },
   "selector": {
     "temp_unit": {
       "options": {

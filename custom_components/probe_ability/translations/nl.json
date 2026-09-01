@@ -33,6 +33,20 @@
       "reconfigure_successful": "Configuratie succesvol bijgewerkt."
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Live Activities (Companion-app)",
+        "description": "Toon een Live Activity op je telefoon terwijl een kook loopt: huidige temperatuur, voortgangsbalk en een aftelklok tot de geschatte eindtijd. Vereist de Home Assistant Companion-app op iOS 17.2+ of Android 16+, en Home Assistant 2026.7 of nieuwer voor iOS.{ha_version_note}",
+        "data": {
+          "live_activity_targets": "Apparaten (notify.mobile_app_…-services)"
+        },
+        "data_description": {
+          "live_activity_targets": "Eén Live Activity per geselecteerd apparaat. Laat leeg om uit te schakelen."
+        }
+      }
+    }
+  },
   "selector": {
     "temp_unit": {
       "options": {

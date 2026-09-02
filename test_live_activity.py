@@ -28,6 +28,7 @@ from live_activity import (  # noqa: E402
     compute_progress,
     format_temp,
     is_silent,
+    should_alert,
     make_record,
     make_tag,
     should_push,
@@ -103,6 +104,8 @@ p = build_payload(slot(phase="heating", eta_ts=None), silent=True)
 check("heating without ETA: no chronometer", "chronometer" not in p["data"])
 check("done progress 100", build_payload(slot(phase="done"), silent=False)["data"]["progress"] == 100)
 check("silent propagated", build_payload(slot(), silent=False)["data"]["silent"] is False)
+check("alert_once by default", build_payload(slot(), silent=True)["data"]["alert_once"] is True)
+check("alert re-enables buzz", build_payload(slot(phase="done"), silent=False, alert=True)["data"]["alert_once"] is False)
 check("critical_text C", build_payload(slot(), silent=True)["data"]["critical_text"] == "63.5°C")
 check("critical_text F", build_payload(slot(temp_unit="F"), silent=True)["data"]["critical_text"] == "146°F")
 check("no reading: no critical_text", "critical_text" not in build_payload(slot(current_c=None, start_c=None), silent=True)["data"])
@@ -140,6 +143,11 @@ check("silent: first push is loud", not is_silent(None, rec()))
 check("silent: done is loud", not is_silent(base, rec(phase="done")))
 check("silent: target change is loud", not is_silent(base, rec(target=90.0)))
 check("silent: routine is silent", is_silent(base, rec(ts=100, cur=61.0)))
+check("alert: start does not re-alert", not should_alert(None, rec()))
+check("alert: routine does not alert", not should_alert(base, rec(ts=100, cur=61.0)))
+check("alert: target change does not alert", not should_alert(base, rec(target=90.0)))
+check("alert: done alerts", should_alert(base, rec(phase="done")))
+check("alert: unreachable alerts", should_alert(base, rec(phase="unreachable")))
 
 # ── 5. tags / generations ────────────────────────────────────────────────────
 
@@ -242,6 +250,8 @@ async def end_to_end():
     last = pushes[-1][1]["data"]
     check("last push is done at 100", last["progress"] == 100 and "chronometer" not in last)
     check("last push is loud", last["silent"] is False)
+    check("last push buzzes", last["alert_once"] is False)
+    check("routine pushes never buzz", all(c[1]["data"]["alert_once"] for c in pushes[1:-1]))
     check("chronometer seen mid-cook", any(c[1]["data"].get("chronometer") for c in pushes))
     check("progress monotonic-ish", all(b[1]["data"]["progress"] >= a[1]["data"]["progress"] - 1 for a, b in zip(pushes, pushes[1:])))
     check("no warnings", not log.warnings, str(log.warnings))

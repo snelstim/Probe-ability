@@ -143,12 +143,19 @@ def build_message(state: SlotState) -> str:
     return text
 
 
-def build_payload(state: SlotState, *, silent: bool) -> dict:
-    """Full ``notify.mobile_app_*`` service data for one activity."""
+def build_payload(state: SlotState, *, silent: bool, alert: bool = False) -> dict:
+    """Full ``notify.mobile_app_*`` service data for one activity.
+
+    ``alert_once`` is set on every update so Android (and a paired watch)
+    only buzzes when the notification first appears — otherwise each
+    temperature update would vibrate the phone again.  ``alert`` re-enables
+    the sound/vibration for a single update (target reached / unreachable).
+    """
     icon, color = PHASE_STYLE.get(state.phase, PHASE_STYLE["collecting"])
     data: dict = {
         "tag": state.tag,
         "live_update": True,
+        "alert_once": not alert,
         "progress": compute_progress(
             state.start_c, state.current_c, state.target_c, state.phase
         ),
@@ -229,6 +236,15 @@ def should_push(prev: PushRecord | None, new: PushRecord, *, force: bool = False
     ):
         return True
     return False
+
+
+def should_alert(prev: PushRecord | None, new: PushRecord) -> bool:
+    """True for the one update that deserves a buzz: reaching (or losing) the target."""
+    return (
+        prev is not None
+        and new.phase != prev.phase
+        and new.phase in ("done", "unreachable")
+    )
 
 
 def is_silent(prev: PushRecord | None, new: PushRecord) -> bool:
@@ -327,7 +343,11 @@ class LiveActivityManager:
             record = make_record(state, now)
             if not should_push(prev, record, force=force):
                 continue
-            payload = build_payload(state, silent=is_silent(prev, record))
+            payload = build_payload(
+                state,
+                silent=is_silent(prev, record),
+                alert=should_alert(prev, record),
+            )
             self._sent[tag] = record
             sends.append(_Send(tag, payload, list(self._targets)))
 

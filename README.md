@@ -478,6 +478,7 @@ Apple throttles Live Activity updates and drops them when they come too often, s
 - immediately on start, phase change, target change and target reached
 - otherwise at most **once per minute**, and only when the temperature moved ≥ 0.5 °C, the progress percentage changed, or the estimated finish moved by ≥ 2 minutes
 - the countdown itself never needs a push — the phone counts down on its own
+- updates are marked *alert once*, so the phone (and a paired watch) only buzzes when the activity first appears and again when the target is reached — never on a routine temperature update
 
 iOS ends any Live Activity after **8 hours**. For long cooks Probe-ability rolls over to a fresh activity every 7 h 50 m (a 16-hour brisket uses two rollovers). Each rollover counts against iOS's push-to-start budget, which replenishes over time.
 

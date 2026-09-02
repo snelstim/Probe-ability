@@ -487,6 +487,7 @@ The activity survives a Home Assistant restart: a running cook is restored and r
 ### Troubleshooting
 
 - **The phone is not in the list** — the Companion app has not registered a `notify.mobile_app_…` action yet. Open the app, check *Settings → Companion app → Notifications*, then reopen the Configure dialog. You can also type the service name by hand.
+- **The phone buzzes with a normal notification banner every minute instead of showing a Live Activity** — the Companion app has not completed the Live Activity token handshake with Home Assistant yet, so every update is delivered as a regular notification. Open the Companion app once on that phone (with Home Assistant reachable) and let it sit on the dashboard for a few seconds; the next update starts a proper Live Activity and the routine updates become silent. Each phone needs to do this once after installing or updating the app.
 - **Nothing appears on the phone** — check the Home Assistant version (iOS needs 2026.7+), that the phone has a working connection to Home Assistant (remote access is needed for the token handshake), and that Live Activities are allowed for the Companion app in the phone's settings. Samsung phones may need *Live notifications for all apps* enabled in developer options.
 - **Log lines** — enable debug logging to see every push:
 

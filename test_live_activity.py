@@ -334,7 +334,21 @@ async def manager_behaviour():
     check("record helper", make_record(slot(), 1.0).progress == 65)
 
 
+def rest_message() -> None:
+    """A rest that lands short must not read as 'Target reached' on the phone."""
+    from live_activity import build_message  # noqa: PLC0415
+    short = build_message(slot(phase="done", target_c=82.0, rest_peak_c=78.6, rest_short_c=3.4))
+    check("short rest: says rested", short.startswith("Rested · peaked"), short)
+    check("short rest: shortfall in C", "3.4° below target" in short, short)
+    short_f = build_message(slot(phase="done", target_c=82.0, rest_peak_c=78.6, rest_short_c=3.4, temp_unit="F"))
+    check("short rest: shortfall converted to F", "6.1° below target" in short_f, short_f)
+    check("no rest: target reached", build_message(slot(phase="done", target_c=82.0)).startswith("Target reached"))
+    check("rest that made target: target reached",
+          build_message(slot(phase="done", target_c=82.0, rest_peak_c=82.1)).startswith("Target reached"))
+
+
 async def main():
+    rest_message()
     await end_to_end()
     await manager_behaviour()
 

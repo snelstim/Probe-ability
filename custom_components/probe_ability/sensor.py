@@ -14,6 +14,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import CONF_INTERNAL_SENSOR_2, CONF_INTERNAL_SENSOR_3, CONF_TEMP_UNIT, DOMAIN, PROBE_MODE_COMBINED, TEMP_UNIT_CELSIUS
+from .predictor import pull_temp as _pull_temp
 
 
 async def async_setup_entry(
@@ -42,44 +43,7 @@ _PROBE_SUFFIX = {0: "", 1: "_2", 2: "_3"}
 # localised name (see the "entity" section of strings.json / translations).
 _PROBE_KEY_SUFFIX = {0: "", 1: "_probe2", 2: "_probe3"}
 
-# Carryover cooking constants
-# Carryover is driven by how much heat the cooking environment holds relative
-# to the target temperature — not the heating rate.  High-ambient (hot grill,
-# 280°C) transfers much more residual heat than a low-and-slow smoker (105°C).
-# Formula: clamp((ambient − target) × 0.06, min=2°C, max=8°C)
-# Examples:
-#   106°C smoker, 54°C target  → (106-54)×0.06 = 3.1°C  (pull at ~51°C)
-#   180°C oven,   74°C target  → (180-74)×0.06 = 6.4°C  (pull at ~68°C)
-#   280°C grill,  60°C target  → clamped to 8°C          (pull at ~52°C)
-_CARRYOVER_AMBIENT_FACTOR = 0.06
-_MIN_CARRYOVER = 2.0   # °C
-_MAX_CARRYOVER = 8.0   # °C
-
-
-def _pull_temp(
-    target_temp: float,
-    rate_per_minute: float | None,
-    ambient_temp: float | None = None,
-) -> float | None:
-    """Return the temperature at which meat should be pulled from heat.
-
-    Estimates carryover rise from the ambient cooking temperature: the hotter
-    the cooking environment, the more residual heat transfers into the meat
-    after it is removed.  Pull the meat at target minus that estimated
-    carryover so it coasts up to the intended serving temperature.
-
-    Falls back to a rate-based estimate (2 × rate) when ambient is unavailable,
-    which is less accurate but still avoids the previous over-estimate.
-    """
-    if rate_per_minute is None or rate_per_minute <= 0:
-        return None
-    if ambient_temp is not None and ambient_temp > target_temp:
-        carryover = (ambient_temp - target_temp) * _CARRYOVER_AMBIENT_FACTOR
-    else:
-        # Fallback: use rate as a rough proxy (conservative multiplier)
-        carryover = rate_per_minute * 2.0
-    carryover = min(max(carryover, _MIN_CARRYOVER), _MAX_CARRYOVER)
-    return round(target_temp - carryover, 1)
+# Pull temperature (carryover-adjusted) lives in predictor.py — HA-free, unit-tested.
 
 
 class CookPredictorSensorBase(SensorEntity):
@@ -245,13 +209,12 @@ class CookTimeRemainingSensor(CookPredictorSensorBase):
                 attrs["ambient_temp"] = round(predictor.current_ambient, 1)
 
             # Pull-from-heat temperature
-            pull = _pull_temp(
-                predictor.target_temp,
-                result.rate_per_minute,
-                predictor.current_ambient,
-            )
+            pull = _pull_temp(predictor.target_temp, result.rate_per_minute)
             if pull is not None:
                 attrs["pull_temp"] = pull
+            if predictor.rest_peak_c is not None:
+                attrs["pulled_at"] = predictor.pulled_at_c
+                attrs["rest_peak"] = predictor.rest_peak_c
 
         # For the primary sensor (probe 0), always include cross-probe data so
         # the card can render all probe slots regardless of probe 0's own state.
@@ -278,13 +241,12 @@ class CookTimeRemainingSensor(CookPredictorSensorBase):
                         attrs[f"probe_{n}_time_remaining"] = round(
                             extra_result.time_remaining_seconds / 60, 1
                         )
-                    extra_pull = _pull_temp(
-                        extra_pred.target_temp,
-                        extra_result.rate_per_minute,
-                        extra_pred.current_ambient,
-                    )
+                    extra_pull = _pull_temp(extra_pred.target_temp, extra_result.rate_per_minute)
                     if extra_pull is not None:
                         attrs[f"probe_{n}_pull_temp"] = extra_pull
+                    if extra_pred.rest_peak_c is not None:
+                        attrs[f"probe_{n}_pulled_at"] = extra_pred.pulled_at_c
+                        attrs[f"probe_{n}_rest_peak"] = extra_pred.rest_peak_c
 
         return attrs
 

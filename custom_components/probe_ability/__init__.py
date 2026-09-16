@@ -630,6 +630,8 @@ class CookMonitor:
                             target_temp=pred.target_temp,
                             reached_target=reached,
                             cook_name=self.probe_name[i],
+                            pulled_at=pred.pulled_at_c,
+                            rest_peak=pred.rest_peak_c,
                         )
                     )
 
@@ -675,6 +677,8 @@ class CookMonitor:
         target_temp: float,
         reached_target: bool,
         cook_name: str = DEFAULT_COOK_NAME,
+        pulled_at: float | None = None,
+        rest_peak: float | None = None,
     ) -> None:
         """Write cook readings to a CSV file for model fine-tuning.
 
@@ -723,13 +727,17 @@ class CookMonitor:
         def _write() -> None:
             os.makedirs(export_dir, exist_ok=True)
             with open(filepath, "w", newline="", encoding="utf-8") as fh:
-                fh.write("# probe_ability_export_version: 3\n")
+                fh.write("# probe_ability_export_version: 4\n")
                 fh.write(f"# integration_version: {__version__}\n")
                 fh.write(f"# probe_index: {probe_index}\n")
                 fh.write(f"# probe_mode: {probe_mode}\n")
                 fh.write(f"# cook_name: {cook_name}\n")
                 fh.write(f"# target_temp_c: {target_temp}\n")
                 fh.write(f"# reached_target: {str(reached_target).lower()}\n")
+                if pulled_at is not None:
+                    fh.write(f"# pulled_at_c: {pulled_at}\n")
+                if rest_peak is not None:
+                    fh.write(f"# rest_peak_c: {rest_peak}\n")
                 fh.write(f"# total_readings: {len(readings)}\n")
                 fh.write(f"# export_timestamp: {datetime.now().isoformat()}\n")
                 writer = csv.writer(fh)

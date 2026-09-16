@@ -1752,7 +1752,9 @@ class CookPredictorCard extends HTMLElement {
             <ha-icon icon="mdi:check-circle"
               style="color:var(--success-color);--mdc-icon-size:64px;margin-bottom:12px;"></ha-icon>
             <div style="font-size:1.4em;font-weight:600;margin-bottom:4px;">${t("cook_complete")}</div>
-            <div style="font-size:1em;color:var(--success-color);">${t("target_temp_reached")}</div>
+            ${attrs.message && attrs.message.startsWith("Rested")
+              ? `<div style="font-size:1em;color:${attrs.message.includes("below target") ? "var(--warning-color)" : "var(--success-color)"};">${attrs.message}</div>`
+              : `<div style="font-size:1em;color:var(--success-color);">${t("target_temp_reached")}</div>`}
           </div>
           ${this._renderTempsRow(attrs)}
           <button id="cp-stop"

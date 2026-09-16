@@ -27,6 +27,31 @@ class PredictionResult:
     prediction_model: str = ""  # "ml" | "physics" | "" during collecting
 
 
+# ── Carryover / pull temperature ─────────────────────────────────────────────
+# Carryover (the rise after the meat leaves the heat) is driven by the core-to-
+# surface temperature gradient, which tracks the *heating rate* at the pull
+# (heat flux × size) — not the oven temperature.  The previous ambient-based
+# formula ((ambient − target) × 0.06) badly over-estimated hot-oven cooks: a
+# whole chicken at 191 °C was pulled 6.5 °C early, coasted only 1.8 °C and the
+# cook never finished.  On every clean rest in the export corpus 2 × rate
+# landed within ~1.6 °C of the real carryover (the chicken: 2.0 vs 1.8).
+CARRYOVER_RATE_FACTOR = 2.0   # °C of carryover per °C/min of heating rate at the pull
+MIN_CARRYOVER_C = 1.0
+MAX_CARRYOVER_C = 8.0
+
+
+def pull_temp(target_temp: float, rate_per_minute: float | None) -> float | None:
+    """Temperature at which meat should leave the heat so carryover lands on target.
+
+    None while there is no positive heating rate (stall / cooling): carryover
+    cannot be estimated, so no pull advice is shown.
+    """
+    if rate_per_minute is None or rate_per_minute <= 0:
+        return None
+    carryover = min(max(rate_per_minute * CARRYOVER_RATE_FACTOR, MIN_CARRYOVER_C), MAX_CARRYOVER_C)
+    return round(target_temp - carryover, 1)
+
+
 class CookPredictor:
     """Predicts cook completion using exponential curve fitting.
 
@@ -69,6 +94,28 @@ class CookPredictor:
         # un-cook, and without the latch a 0.1°C probe dip below the
         # tolerance line resurrects a large ETA at the cook's peak.
         self._done_latched: bool = False
+
+        # Rest tracking.  Once the meat is within carryover range of the target
+        # and the cooker ambient collapses for good (meat removed from heat),
+        # follow the carryover rise and finish the cook at its peak — even when
+        # the peak lands short of the target — so a rested cook never hangs.
+        self._rest_candidate_ts: float | None = None
+        self._rest_candidate_temp: float | None = None
+        self._rest_ambient_base: float | None = None
+        self._rest_pull_ts: float | None = None
+        self._rest_pulled_at: float | None = None
+        self._rest_peak: float | None = None
+        self._rest_peak_ts: float | None = None
+        self._done_via_rest: bool = False
+        self._rest_ambient_drop = 0.20         # ambient < 80 % of its 5-min baseline = off the heat
+        self._rest_ambient_recover = 0.90      # ...back above 90 % = it was only the lid / door
+        self._rest_confirm_seconds = 90.0      # the drop must hold this long to count as a pull
+        self._rest_range_c = MAX_CARRYOVER_C + 2.0  # a collapse only counts as a pull this close to target
+        self._rest_probe_out_c = 3.0           # internal falling this much right after = probe came out
+        self._rest_peak_drop_c = 0.3           # past the peak once readings sit this far below it...
+        self._rest_peak_confirm_seconds = 60.0 # ...for this long (and >= 2 readings)
+        self._rest_plateau_seconds = 900.0     # ...or the peak has simply held for 15 min
+        self._rest_max_seconds = 1800.0        # stop waiting for a peak after 30 min of resting
 
         # EMA smoothing factor: lower = more stable, slower to react to real
         # changes.  0.15 → a sudden step is ~50% reflected after 4–5 updates
@@ -129,6 +176,24 @@ class CookPredictor:
             return self._start_temp
         return self.readings[0][1] if self.readings else None
 
+    @property
+    def pulled_at_c(self) -> float | None:
+        """Internal temperature when the meat was detected leaving the heat (None if never)."""
+        return self._rest_pulled_at
+
+    @property
+    def rest_peak_c(self) -> float | None:
+        """Highest internal temperature reached while resting (None if no rest was detected)."""
+        return self._rest_peak
+
+    @property
+    def rest_short_c(self) -> float | None:
+        """How far the rest peak fell short of the target (None if no rest, or not short)."""
+        if self._rest_peak is None:
+            return None
+        short = self._target_temp - self._rest_peak
+        return round(short, 1) if short > self._done_tolerance_c else None
+
     def add_reading(
         self, timestamp: float, internal_temp: float, ambient_temp: float
     ) -> None:
@@ -145,6 +210,7 @@ class CookPredictor:
         self._last_stable_ts = None
         self._recent_etas.clear()
         self._done_latched = False
+        self._reset_rest()
 
     def to_dict(self) -> dict:
         """Serialise state for persistence."""
@@ -156,6 +222,14 @@ class CookPredictor:
             "cook_name": self.cook_name,
             "start_temp": self._start_temp,
             "done_latched": self._done_latched,
+            "rest": {
+                "pull_ts": self._rest_pull_ts,
+                "pulled_at": self._rest_pulled_at,
+                "peak": self._rest_peak,
+                "peak_ts": self._rest_peak_ts,
+                "ambient_base": self._rest_ambient_base,
+                "done_via_rest": self._done_via_rest,
+            },
         }
 
     @classmethod
@@ -168,6 +242,13 @@ class CookPredictor:
         predictor.cook_name = data.get("cook_name", "")
         predictor._start_temp = data.get("start_temp")
         predictor._done_latched = data.get("done_latched", False)
+        rest = data.get("rest") or {}
+        predictor._rest_pull_ts = rest.get("pull_ts")
+        predictor._rest_pulled_at = rest.get("pulled_at")
+        predictor._rest_peak = rest.get("peak")
+        predictor._rest_peak_ts = rest.get("peak_ts")
+        predictor._rest_ambient_base = rest.get("ambient_base")
+        predictor._done_via_rest = bool(rest.get("done_via_rest", False))
         return predictor
 
     def predict(self) -> PredictionResult:
@@ -178,6 +259,12 @@ class CookPredictor:
         # done even if the reading dips afterwards (meat doesn't un-cook).
         if self.readings:
             now_ts, current_temp, _ = self.readings[-1]
+            if (self._done_via_rest and self._rest_peak is not None
+                    and current_temp > self._rest_peak + 1.0):
+                # "Done" after a rest, but the meat is climbing again — it went
+                # back on the heat.  Un-latch and carry on as a normal cook.
+                self._done_latched = False
+                self._reset_rest()
             if self._done_latched or current_temp >= self._target_temp - self._done_tolerance_c:
                 self._done_latched = True
                 return PredictionResult(
@@ -185,7 +272,7 @@ class CookPredictor:
                     eta_timestamp=now_ts,
                     phase="done",
                     confidence="high",
-                    message="Target temperature reached",
+                    message=self._done_message(),
                 )
 
         if len(self.readings) < self._min_readings:
@@ -197,6 +284,11 @@ class CookPredictor:
             )
 
         now_ts, current_temp, _ = self.readings[-1]
+
+        # Removed from heat?  Follow the rest and finish the cook at its peak.
+        rest = self._track_rest()
+        if rest is not None:
+            return rest
 
         # Build sliding window
         windowed = self._windowed_readings()
@@ -381,6 +473,93 @@ class CookPredictor:
             return new_value
         alpha = self._adaptive_alpha()
         return alpha * new_value + (1 - alpha) * self._last_stable_remaining
+
+    def _done_message(self) -> str:
+        if self._done_via_rest and self._rest_peak is not None:
+            short = self._target_temp - self._rest_peak
+            if short > self._done_tolerance_c:
+                return f"Rested — peaked at {self._rest_peak:.1f}°C, {short:.1f}°C below target"
+            return f"Rested — peaked at {self._rest_peak:.1f}°C, target reached"
+        return "Target temperature reached"
+
+    def _reset_rest(self) -> None:
+        self._rest_candidate_ts = None
+        self._rest_candidate_temp = None
+        self._rest_ambient_base = None
+        self._rest_pull_ts = None
+        self._rest_pulled_at = None
+        self._rest_peak = None
+        self._rest_peak_ts = None
+        self._done_via_rest = False
+
+    def _ambient_baseline(self, before_ts: float) -> float | None:
+        """Mean ambient over the five minutes ending just before ``before_ts``."""
+        window = [ta for ts, _, ta in self.readings if before_ts - 300.0 <= ts < before_ts]
+        return sum(window) / len(window) if len(window) >= 2 else None
+
+    def _track_rest(self) -> PredictionResult | None:
+        """Detect the meat leaving the heat and follow the carryover rest.
+
+        A pull is a *terminal* ambient collapse (> 20 % below the 5-min baseline,
+        sustained 90 s) while the meat is within carryover range of the target.
+        A dip that recovers (lid / door) is discarded, and a reading that plunges
+        right after the drop means the probe left the meat, not a rest.  Once a
+        pull is confirmed the running peak is tracked — unless the ambient
+        recovers (fire back, meat back in), which cancels the rest; when readings
+        sit clearly below the peak (or it has held 15 min, or 30 min pass) the cook is
+        finished at that peak, with the shortfall reported when the rest did
+        not make the target.  Returns None while nothing rest-related applies.
+        """
+        now_ts, cur, amb = self.readings[-1]
+
+        if self._rest_pull_ts is None:
+            if self._rest_candidate_ts is None:
+                if cur < self._target_temp - self._rest_range_c:
+                    return None
+                base = self._ambient_baseline(now_ts)
+                if base is None or base <= 0 or amb >= base * (1.0 - self._rest_ambient_drop):
+                    return None
+                self._rest_candidate_ts, self._rest_candidate_temp, self._rest_ambient_base = now_ts, cur, base
+                return None
+            # Candidate pull: has the drop held, and is the probe still in the meat?
+            if (amb >= self._rest_ambient_base * self._rest_ambient_recover
+                    or cur < self._rest_candidate_temp - self._rest_probe_out_c):
+                self._rest_candidate_ts = self._rest_candidate_temp = self._rest_ambient_base = None
+                return None
+            if now_ts - self._rest_candidate_ts < self._rest_confirm_seconds:
+                return None
+            self._rest_pull_ts, self._rest_pulled_at = self._rest_candidate_ts, self._rest_candidate_temp
+            since = [(ts, ti) for ts, ti, _ in self.readings if ts >= self._rest_candidate_ts]
+            self._rest_peak_ts, self._rest_peak = max(since, key=lambda r: r[1])
+
+        # Back on the heat?  (fire recovered, or the meat went back in.)  Then
+        # this was never a rest: forget it and resume normal prediction.
+        if (self._rest_ambient_base is not None
+                and amb >= self._rest_ambient_base * self._rest_ambient_recover):
+            self._reset_rest()
+            return None
+
+        # Resting: follow the peak.
+        if cur > self._rest_peak:
+            self._rest_peak, self._rest_peak_ts = cur, now_ts
+        below = [ts for ts, ti, _ in self.readings
+                 if ts > self._rest_peak_ts and ti <= self._rest_peak - self._rest_peak_drop_c]
+        past_peak = (len(below) >= 2 and now_ts - below[0] >= self._rest_peak_confirm_seconds
+                     and cur <= self._rest_peak - self._rest_peak_drop_c)
+        plateau = now_ts - self._rest_peak_ts >= self._rest_plateau_seconds
+        if past_peak or plateau or now_ts - self._rest_pull_ts >= self._rest_max_seconds:
+            self._done_latched = True
+            self._done_via_rest = True
+            return PredictionResult(
+                time_remaining_seconds=0, eta_timestamp=now_ts, phase="done",
+                confidence="high", message=self._done_message(),
+            )
+        rise = cur - self._rest_pulled_at
+        return PredictionResult(
+            phase="finishing", confidence="high",
+            message=(f"Resting — {rise:+.1f}°C carryover so far "
+                     f"(peak {self._rest_peak:.1f}°C, target {self._target_temp:.1f}°C)"),
+        )
 
     def _target_unreachable(self) -> bool:
         """True when ambient has stayed below target long enough that the

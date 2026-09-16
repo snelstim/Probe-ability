@@ -26,7 +26,7 @@ Both layers share the same data pipeline: readings are collected for ~10 minutes
 
 **EMA smoothing** : The time-remaining estimate is smoothed using an exponential moving average (α = 0.15) to dampen sensor noise without hiding real trends, preventing the display from jumping between readings.
 
-**Pull-from-heat warning** : Meat continues warming after removal from heat (carryover cooking). Probe-ability calculates the pull temperature and shows a prominent warning when the meat reaches it.
+**Pull-from-heat warning** : Meat continues warming after removal from heat (carryover cooking). Probe-ability estimates the carryover from the heating rate at the pull, shows a prominent warning when the meat reaches the pull temperature, then follows the rest and finishes the cook at its peak — reporting how far short it landed if the carryover didn't make the target.
 
 ---
 
@@ -203,6 +203,7 @@ Once enough data is collected:
 - **Tap the ring** to toggle between **countdown** (ring drains as time passes) and **temperature** (ring fills as temperature rises toward target). A faint hint inside the ring shows which mode you're in.
 - Current internal and ambient temperatures, heating rate, ETA, cook phase, and confidence level are displayed
 - When the meat approaches the pull temperature, a **prominent warning** appears telling you to remove it from heat now
+- Once the cooker's ambient temperature collapses for good (the meat is off the heat) the card switches to **Resting**, tracks the carryover rise, and finishes the cook at its peak — *Rested — peaked at 78.6°C, 3.4°C below target* — so a rest that lands short still completes instead of waiting forever. A brief lid/door dip is ignored, and a probe pulled out with the meat is not mistaken for a rest.
 
 ### Done
 
@@ -257,7 +258,9 @@ The primary `time_remaining` sensor (probe 1) exposes all attributes the card ne
 | `ambient_temp` | float | Latest ambient temperature reading (°C) |
 | `rate_c_per_minute` | float | Current (smoothed) heating rate |
 | `readings_count` | int | Number of readings collected so far |
-| `pull_temp` | float | Temperature at which to remove from heat (carryover-adjusted) |
+| `pull_temp` | float | Temperature at which to remove from heat (target minus the estimated carryover) |
+| `pulled_at` | float | Internal temperature when the meat was detected leaving the heat (present only after a pull) |
+| `rest_peak` | float | Highest internal temperature reached while resting (present only after a pull) |
 | `message` | string | Human-readable status message (during stall etc.) |
 
 **Cross-probe attributes (when probes 2/3 are configured and active):**
@@ -510,13 +513,15 @@ Enable **Export cook data** in the config flow to automatically save a CSV file 
 Lines starting with `#` are metadata headers and can be skipped by most tools.
 
 ```
-# probe_ability_export_version: 3
+# probe_ability_export_version: 4
 # integration_version: 0.6.1
 # probe_index: 0
 # probe_mode: combined
 # cook_name: Beef Brisket Fall Apart
 # target_temp_c: 96.0
 # reached_target: true
+# pulled_at_c: 77.2          (only when the meat was detected leaving the heat)
+# rest_peak_c: 78.6          (highest temperature reached while resting)
 # total_readings: 147
 # export_timestamp: 2026-04-25T18:30:00.000000
 elapsed_s,internal_temp_c,ambient_temp_c,predicted_remaining_s,confidence
@@ -568,7 +573,7 @@ You can have export enabled without sharing, sharing enabled without export, bot
 | Reading debounce interval | 30 seconds |
 | Curve fitting window (physics fallback) | 40-minute sliding window |
 | EMA smoothing factor (α) | 0.15 — half-life ≈ 4–5 readings (~2 min) |
-| Carryover cooking model | `clamp((ambient − target) × 0.06, min=2°C, max=8°C)` — ambient-aware |
+| Carryover cooking model | `clamp(2 × heating rate at the pull, min=1°C, max=8°C)` — the rise after leaving the heat tracks the core-to-surface gradient (heat × size), not the oven temperature; validated against rested cooks in the export corpus |
 | Stale probe exclusion (combined ETA) | Probe excluded after 5 minutes without a new reading |
 | State persistence | Survives HA restarts — cook state written to `.storage` |
 | External dependencies | None (ML model is pure Python, no packages needed) |

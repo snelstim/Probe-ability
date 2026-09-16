@@ -80,6 +80,8 @@ class SlotState:
     time_remaining_s: float | None
     eta_ts: float | None
     temp_unit: str  # "C" | "F"
+    rest_peak_c: float | None = None   # highest temp reached while resting (after a pull)
+    rest_short_c: float | None = None  # how far that peak fell short of target (None if not short)
 
 
 @dataclass
@@ -132,6 +134,10 @@ def build_message(state: SlotState) -> str:
     unit = state.temp_unit
     target = format_temp(state.target_c, unit)
     if state.phase == "done":
+        if state.rest_short_c is not None and state.rest_peak_c is not None:
+            short = state.rest_short_c * (9 / 5 if unit == "F" else 1)
+            return (f"Rested · peaked {format_temp(state.rest_peak_c, unit)} · "
+                    f"{short:.1f}° below target {target}")
         return f"Target reached · {target}"
     cur = format_temp(state.current_c, unit) if state.current_c is not None else "--"
     if state.phase == "unreachable":
@@ -391,6 +397,8 @@ class LiveActivityManager:
                     time_remaining_s=result.time_remaining_seconds,
                     eta_ts=result.eta_timestamp,
                     temp_unit=self._temp_unit,
+                    rest_peak_c=pred.rest_peak_c,
+                    rest_short_c=pred.rest_short_c,
                 )
             return states
 
@@ -437,6 +445,8 @@ class LiveActivityManager:
             time_remaining_s=result.time_remaining_seconds,
             eta_ts=result.eta_timestamp,
             temp_unit=self._temp_unit,
+            rest_peak_c=pred.rest_peak_c,
+            rest_short_c=pred.rest_short_c,
         )
         return states
 

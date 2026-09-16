@@ -65,6 +65,11 @@ class CookPredictor:
     def __init__(self, target_temp: float) -> None:
         self._target_temp = target_temp
         self.readings: list[tuple[float, float, float]] = []  # (ts, internal, ambient)
+        # [[elapsed_s, target_c], ...] — seeded with the target at the first
+        # reading, appended on every mid-cook change (set_target / the card's
+        # linked input_number).  Exported and shared so training can label each
+        # reading against the target that was actually in force.
+        self._target_history: list[list[float]] = []
 
         # Cook name — used by the ML model to select the meat taxonomy encoding.
         # Set by CookMonitor when a cook starts; defaults to "" (triggers fallback).
@@ -154,6 +159,12 @@ class CookPredictor:
         if value == self._target_temp:
             return
         self._target_temp = value
+        if self.readings and self._target_history:
+            elapsed = round(self.readings[-1][0] - self.readings[0][0], 1)
+            if self._target_history[-1][0] == elapsed:
+                self._target_history[-1][1] = float(value)   # two changes in one reading
+            else:
+                self._target_history.append([elapsed, float(value)])
         # Re-evaluate the done latch against the new target: raising the
         # target mid-cook must un-latch, lowering it below the peak latches.
         peak = max((ti for _, ti, _ in self.readings), default=None)
@@ -175,6 +186,11 @@ class CookPredictor:
         if self._start_temp is not None:
             return self._start_temp
         return self.readings[0][1] if self.readings else None
+
+    @property
+    def target_history(self) -> list[list[float]]:
+        """[[elapsed_s, target_c], ...] — the target at start plus every mid-cook change."""
+        return [list(h) for h in self._target_history]
 
     @property
     def pulled_at_c(self) -> float | None:
@@ -201,6 +217,8 @@ class CookPredictor:
         self.readings.append((timestamp, internal_temp, ambient_temp))
         if self._start_temp is None:
             self._start_temp = internal_temp
+        if not self._target_history:
+            self._target_history = [[0.0, float(self._target_temp)]]
 
     def reset(self) -> None:
         """Clear all readings and derived state for a new cook."""
@@ -211,6 +229,7 @@ class CookPredictor:
         self._recent_etas.clear()
         self._done_latched = False
         self._reset_rest()
+        self._target_history = []
 
     def to_dict(self) -> dict:
         """Serialise state for persistence."""
@@ -222,6 +241,7 @@ class CookPredictor:
             "cook_name": self.cook_name,
             "start_temp": self._start_temp,
             "done_latched": self._done_latched,
+            "target_history": [list(h) for h in self._target_history],
             "rest": {
                 "pull_ts": self._rest_pull_ts,
                 "pulled_at": self._rest_pulled_at,
@@ -242,6 +262,11 @@ class CookPredictor:
         predictor.cook_name = data.get("cook_name", "")
         predictor._start_temp = data.get("start_temp")
         predictor._done_latched = data.get("done_latched", False)
+        hist = data.get("target_history")
+        predictor._target_history = (
+            [[float(e), float(v)] for e, v in hist] if hist
+            else ([[0.0, float(data["target_temp"])]] if predictor.readings else [])
+        )
         rest = data.get("rest") or {}
         predictor._rest_pull_ts = rest.get("pull_ts")
         predictor._rest_pulled_at = rest.get("pulled_at")

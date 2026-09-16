@@ -513,12 +513,13 @@ Enable **Export cook data** in the config flow to automatically save a CSV file 
 Lines starting with `#` are metadata headers and can be skipped by most tools.
 
 ```
-# probe_ability_export_version: 4
+# probe_ability_export_version: 5
 # integration_version: 0.6.1
 # probe_index: 0
 # probe_mode: combined
 # cook_name: Beef Brisket Fall Apart
 # target_temp_c: 96.0
+# target_history: [[0.0, 96.0]]   (elapsed_s → target_c; more than one entry = target changed mid-cook)
 # reached_target: true
 # pulled_at_c: 77.2          (only when the meat was detected leaving the heat)
 # rest_peak_c: 78.6          (highest temperature reached while resting)
@@ -559,7 +560,7 @@ Enable **Share anonymous cook data** in the config flow to automatically send co
 - Any device or user identifiers
 - Incomplete cooks (only cooks where the probe reached the target temperature are shared)
 
-Data is sent via an INSERT-only REST API secured with Row Level Security — anonymous clients can insert rows but cannot read, modify, or delete any data.
+Shared rows carry the cook name, target, whether it was reached, ambient median, duration, the (downsampled) readings and — from v0.10.4 — the target history plus, when a rest was detected, the pull temperature and rest peak. Data is sent via an INSERT-only REST API secured with Row Level Security — anonymous clients can insert rows but cannot read, modify, or delete any data.
 
 You can have export enabled without sharing, sharing enabled without export, both, or neither, they are independent settings.
 

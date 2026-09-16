@@ -163,6 +163,23 @@ def check_rest_and_pull() -> None:
     ok(r.phase == "done" and r.message == "Target temperature reached" and p.rest_peak_c is None,
        f"back in the oven: {r.phase} {r.message} rest_peak={p.rest_peak_c}")
 
+    # F: target history — seeded at the first reading, appended on every mid-cook change
+    p = CookPredictor(target_temp=71.0)
+    ok(p.target_history == [], "no history before the first reading")
+    p.add_reading(1000.0, 20.0, 190.0)
+    ok(p.target_history == [[0.0, 71.0]], f"seeded with the start target: {p.target_history}")
+    p.add_reading(1030.0, 21.0, 190.0); p.target_temp = 71.0
+    ok(p.target_history == [[0.0, 71.0]], "unchanged target does not append")
+    p.add_reading(1060.0, 22.0, 190.0); p.target_temp = 73.0
+    ok(p.target_history == [[0.0, 71.0], [60.0, 73.0]], f"change appended at elapsed 60 s: {p.target_history}")
+    p.target_temp = 74.0
+    ok(p.target_history == [[0.0, 71.0], [60.0, 74.0]], "second change in the same reading replaces")
+    ok(CookPredictor.from_dict(p.to_dict()).target_history == p.target_history, "history survives save/restore")
+    old = p.to_dict(); old.pop("target_history")
+    ok(CookPredictor.from_dict(old).target_history == [[0.0, 74.0]], "old save without history is seeded from its target")
+    p.reset()
+    ok(p.target_history == [], "reset clears the history")
+
     print(f"All {checks} checks passed.")
 
 

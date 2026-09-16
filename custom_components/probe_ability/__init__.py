@@ -632,6 +632,7 @@ class CookMonitor:
                             cook_name=self.probe_name[i],
                             pulled_at=pred.pulled_at_c,
                             rest_peak=pred.rest_peak_c,
+                            target_history=pred.target_history,
                         )
                     )
 
@@ -649,6 +650,9 @@ class CookMonitor:
                             target_temp=pred.target_temp,
                             cook_name=self.probe_name[i],
                             reached_target=reached,
+                            pulled_at=pred.pulled_at_c,
+                            rest_peak=pred.rest_peak_c,
+                            target_history=pred.target_history,
                         )
                     )
 
@@ -679,6 +683,7 @@ class CookMonitor:
         cook_name: str = DEFAULT_COOK_NAME,
         pulled_at: float | None = None,
         rest_peak: float | None = None,
+        target_history: list | None = None,
     ) -> None:
         """Write cook readings to a CSV file for model fine-tuning.
 
@@ -696,6 +701,7 @@ class CookMonitor:
         shown live on the card (empty during the initial collecting phase).
         """
         import csv
+        import json
         import os
         from datetime import datetime
 
@@ -727,12 +733,14 @@ class CookMonitor:
         def _write() -> None:
             os.makedirs(export_dir, exist_ok=True)
             with open(filepath, "w", newline="", encoding="utf-8") as fh:
-                fh.write("# probe_ability_export_version: 4\n")
+                fh.write("# probe_ability_export_version: 5\n")
                 fh.write(f"# integration_version: {__version__}\n")
                 fh.write(f"# probe_index: {probe_index}\n")
                 fh.write(f"# probe_mode: {probe_mode}\n")
                 fh.write(f"# cook_name: {cook_name}\n")
                 fh.write(f"# target_temp_c: {target_temp}\n")
+                if target_history:
+                    fh.write(f"# target_history: {json.dumps(target_history)}\n")
                 fh.write(f"# reached_target: {str(reached_target).lower()}\n")
                 if pulled_at is not None:
                     fh.write(f"# pulled_at_c: {pulled_at}\n")
@@ -763,6 +771,9 @@ class CookMonitor:
         target_temp: float,
         cook_name: str,
         reached_target: bool = True,
+        pulled_at: float | None = None,
+        rest_peak: float | None = None,
+        target_history: list | None = None,
     ) -> None:
         """POST anonymised cook data to Supabase (fire-and-forget, silent on failure).
 
@@ -802,6 +813,11 @@ class CookMonitor:
             "duration_s":         duration_s,
             "reading_count":      len(readings),
             "integration_version": __version__,
+            # Rest data only when a rest was detected; target history whenever
+            # there is one (always, after the first reading).
+            **({"pulled_at_c": round(pulled_at, 1)} if pulled_at is not None else {}),
+            **({"rest_peak_c": round(rest_peak, 1)} if rest_peak is not None else {}),
+            **({"target_history": target_history} if target_history else {}),
             "readings": [
                 [round(r[0] - t0, 1), round(r[1], 2), round(r[2], 2)]
                 for r in sampled

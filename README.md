@@ -16,7 +16,7 @@ A Home Assistant custom integration that predicts when your meat will reach a ta
 
 Probe-ability uses a two-layer prediction system:
 
-**1. ML model (primary)** : A Gradient Boosted Regressor trained on 140 real cooks (133 from a Meater device, 7 from Probe-ability exports) across beef, pork, poultry, lamb, and fish. It predicts time remaining from 17 features: current and starting temperatures, heating rate, deceleration, elapsed time, ambient temperature statistics, stall detection, and meat type. It achieves ~4 min cross-validated mean absolute error across all meat types and is accurate from the moment collecting ends. The model is embedded directly in `ml_model_code.py` as pure Python — no external ML libraries or model files are required.
+**1. ML model (primary)** : Two gradient-boosted tree ensembles — one for the long horizon, one for the endgame — blended by how many degrees remain to target. Trained on 217 real cooks (129 from a Meater device, 37 Probe-ability exports and 51 anonymously shared community cooks) across beef, pork, poultry, lamb and fish, on ovens, smokers and pellet grills. It predicts time remaining from 17 features: current and starting temperatures, heating rate, deceleration, elapsed time, ambient temperature statistics, stall detection, and meat type. Replayed against real cooks, the typical (median) error is about 10 minutes, and about 11 minutes in the final stretch; early estimates are rougher and are shown as low confidence. The model is embedded directly in `ml_model_code.py` as pure Python — no external ML libraries or model files are required.
 
 **2. Physics model (fallback)** : Newton's Law of Heating: fits an exponential curve to recent readings and solves for the time at which the meat will reach target temperature. Used automatically if the ML model is unavailable (prediction error or unexpected exception).
 
@@ -581,19 +581,21 @@ You can have export enabled without sharing, sharing enabled without export, bot
 
 ### Prediction model
 
-**Primary — ML (Gradient Boosted Regressor):**
+**Primary — ML (blended gradient-boosted ensembles):**
 
-Trained on 140 cooks (133 Meater exports + 7 Probe-ability exports) across beef, pork, poultry, lamb, and fish. Target temperatures are derived from the cook's preset (e.g. medium rare beef → 54°C) rather than the peak temperature reached, ensuring training and inference are in the same distribution. Predicts minutes remaining from 17 features:
+Two `GradientBoostingRegressor` ensembles (500 trees, depth 4) share the same 17 features: one is fitted to raw minutes remaining, which is best far from the target, the other to log-minutes, which is best in the endgame. The compiled `score()` blends them on degrees-to-go (raw model above 15 °C to go, log model below 4 °C, smoothstep between) and returns plain minutes.
+
+The shipped model (v0.10.2, 13 September 2026) was trained on **217 real cooks** — 129 Meater exports, 37 Probe-ability exports and 51 anonymously shared community cooks — across beef, pork, poultry, lamb and fish, on ovens, smokers and pellet grills: **1,832 training samples**, taken at 10 %…90 % of each cook. For Meater exports the target is the preset's temperature (e.g. medium-rare beef → 54 °C); Probe-ability and community cooks use the target that was set. A cook that never reached its target is labelled to its actual peak (with the stall plateau trimmed) rather than the nominal target, and when a target was changed mid-cook each sample is labelled against the target in force at that moment. Predicts minutes remaining from 17 features:
 
 | Feature group | Features |
 |---|---|
 | Temperatures | Current internal, starting internal, target gap, current ambient, mean/std ambient so far |
-| Rates | Initial rate (first 10 min), recent rate (last 5 min), deceleration ratio |
+| Rates | Heating rate over the last 10 min and over the last 5 min, and their ratio (deceleration) |
 | Time | Elapsed minutes |
-| State | Stall flag (rate < 0.2°C/min in 60–80°C zone) |
+| State | Stall flag (rate < 0.2 °C/min in the 40–80 °C zone) |
 | Meat type | Category, animal, cut type, cut, doneness preset |
 
-Cross-validated MAE: ~4 min overall; accurate from the end of the collecting phase. Meat type context is taken from the `cook_name` parameter — use one of the card's built-in preset names for best accuracy.
+**Accuracy** (v0.10.5 code, shipped model), measured by replaying 67 real finished cooks through the integration and scoring every reading against the actual time-to-target (`replay_harness.py` in the training repository): mean absolute error 30 min, **median 10 min**. By phase of cook — first 30 %: 73 min (absolute minutes, dominated by multi-hour low-and-slow cooks), 30–60 %: 19 min, 60–90 %: 11 min, last 10 %: 11 min. Estimates shown as *low* confidence average 38 min off, *high* confidence 12 min. Meat type context is taken from the `cook_name` parameter — use one of the card's built-in presets for best accuracy; a preset with a typed temperature keeps its cut, and an unknown name is treated as a generic cook, exactly as in training.
 
 **Fallback — Physics (Newton's Law of Heating):**
 

@@ -1,7 +1,11 @@
-"""ML-based cook time predictor using a pre-trained GradientBoostingRegressor.
+"""ML-based cook time predictor using pre-trained gradient-boosted tree ensembles.
 
-The model was trained on 178 cooks from a Meater device and achieves ~3.3 min
-MAE vs ~35.9 min MAE for the physics-only exponential model.
+Two GradientBoostingRegressor ensembles (raw minutes / log-minutes) are compiled
+into ml_model_code.py and blended there on degrees-to-go, so score() returns
+plain minutes.  The shipped model was trained on 217 real cooks (Meater exports,
+Probe-ability exports and community-shared cooks); the README's "Prediction
+model" section carries the current numbers, and retrain.py in the
+probe-ability-training repository builds it.
 
 The model predicts *minutes remaining* from 17 features:
   - 12 numeric: temperatures, rates, elapsed time, deceleration, stall flag

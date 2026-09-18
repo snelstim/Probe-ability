@@ -273,7 +273,7 @@ def _build_features(
     t0 = times_abs[0]
     times_rel = [t - t0 for t in times_abs]
 
-    rate_initial = _compute_rate(times_rel, intern, 600.0)   # first 10 min
+    rate_initial = _compute_rate(times_rel, intern, 600.0)   # trailing 10-min window (feature name is historical)
     rate_recent  = _compute_rate(times_rel, intern, 300.0)   # last 5 min
     decel = rate_recent / rate_initial if abs(rate_initial) > 0.01 else 1.0
 

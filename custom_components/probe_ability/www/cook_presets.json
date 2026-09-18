@@ -43,8 +43,10 @@
           "label": "Burger",
           "labels": { "nl": "Burger" },
           "doneness": [
-            { "id": "medium",    "label": "Medium",    "labels": { "nl": "Medium" },     "temp": 71 },
-            { "id": "well_done", "label": "Well Done", "labels": { "nl": "Doorbakken" }, "temp": 77 }
+            { "id": "medium_rare", "label": "Medium Rare", "labels": { "nl": "Medium rare" }, "temp": 55 },
+            { "id": "medium",      "label": "Medium",      "labels": { "nl": "Medium" },      "temp": 60 },
+            { "id": "medium_well", "label": "Medium Well", "labels": { "nl": "Medium well" }, "temp": 65 },
+            { "id": "well_done",   "label": "Well Done",   "labels": { "nl": "Doorbakken" },  "temp": 71 }
           ]
         },
         {

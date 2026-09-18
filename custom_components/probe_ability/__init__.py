@@ -719,6 +719,7 @@ class CookMonitor:
         # Replay predictions: feed readings one-by-one into a fresh predictor
         # to reproduce the live estimates shown on the card.
         replay = CookPredictor(target_temp=target_temp)
+        replay.cook_name = cook_name   # the meat encoding shapes the ML estimate
         predicted: list[tuple[float | None, str | None]] = []
         for ts, internal, ambient in readings:
             replay.add_reading(ts, internal, ambient)

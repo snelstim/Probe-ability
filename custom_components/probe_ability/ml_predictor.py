@@ -56,44 +56,39 @@ _DONENESS_ENC: dict[str, int] = {
 # Add a new row here when adding cuts not listed below.
 # ---------------------------------------------------------------------------
 
+# (cut_type, animal, cut_type, cut) codes — MUST be identical to retrain.py's table:
+# the compiled model was trained with those codes.  retrain.py refuses to compile
+# if they differ.
 _CUT_LOOKUP: dict[str, tuple[int, int, int, int]] = {
-    # Beef steaks
-    "sirloin":   (0, 0, 7, _CUT_ENC["sirloin"]),
-    "rib_eye":   (0, 0, 7, _CUT_ENC["rib_eye"]),
-    "t_bone":    (0, 0, 7, _CUT_ENC["t_bone"]),
-    "rump":      (0, 0, 7, _CUT_ENC["rump"]),
-    "tomahawk":  (0, 0, 7, _CUT_ENC["tomahawk"]),
-    "picanha":   (0, 0, 7, _CUT_ENC["picanha"]),
-    "flank":     (0, 0, 7, _CUT_ENC["flank"]),
-    "tenderloin":(0, 0, 7, _CUT_ENC["tenderloin"]),
-    "steak":     (0, 0, 7, _CUT_ENC["steak"]),
-    # Beef roasts / slow cooks
-    "brisket":   (0, 0, 5, _CUT_ENC["brisket"]),
-    "chuck":     (0, 0, 5, _CUT_ENC["chuck"]),
-    "topside":   (0, 0, 5, _CUT_ENC["topside"]),
-    "roast":     (0, 0, 5, _CUT_ENC["roast"]),
-    # Beef other
-    "ground":    (0, 0, 4, _CUT_ENC["ground"]),
-    "burger":    (0, 0, 4, _CUT_ENC["burger"]),
-    "meatloaf":  (0, 0, 4, _CUT_ENC["meatloaf"]),
-    # Pork
-    "loin":      (4, 6, 7, _CUT_ENC["loin"]),
-    "belly":     (4, 6, 7, _CUT_ENC["belly"]),
-    "rib_pork":  (4, 6, 7, _CUT_ENC["rib_pork"]),
-    "rib_rack":  (4, 6, 5, _CUT_ENC["rib_rack"]),
-    "shoulder":  (4, 6, 5, _CUT_ENC["shoulder"]),
-    "butt":      (4, 6, 5, _CUT_ENC["butt"]),
-    # Poultry
-    "breast":      (5, 1, 0, _CUT_ENC["breast"]),   # chicken
-    "duck_breast": (5, 3, 3, _CUT_ENC["breast"]),   # duck: animal=3, cut_type=3
-    "thigh":       (5, 1, 0, _CUT_ENC["thigh"]),
-    "whole":       (5, 1, 0, _CUT_ENC["whole"]),
-    # Lamb
-    "leg_lamb":  (2, 4, 5, _CUT_ENC["leg_lamb"]),
-    # Fish
-    "fillet":    (1, 7, 6, _CUT_ENC["fillet"]),
-    # Generic fallback
-    "other":     (0, 0, 4, _CUT_ENC["other"]),
+    "sirloin":    (0, 0, 7, _CUT_ENC["sirloin"]),
+    "rib_eye":    (0, 0, 7, _CUT_ENC["rib_eye"]),
+    "t_bone":     (0, 0, 7, _CUT_ENC["t_bone"]),
+    "rump":       (0, 0, 7, _CUT_ENC["rump"]),
+    "tomahawk":   (0, 0, 7, _CUT_ENC["tomahawk"]),
+    "picanha":    (0, 0, 7, _CUT_ENC["picanha"]),
+    "flank":      (0, 0, 7, _CUT_ENC["flank"]),
+    "tenderloin": (0, 0, 7, _CUT_ENC["tenderloin"]),
+    "steak":      (0, 0, 7, _CUT_ENC["steak"]),
+    "brisket":    (0, 0, 5, _CUT_ENC["brisket"]),
+    "chuck":      (0, 0, 5, _CUT_ENC["chuck"]),
+    "topside":    (0, 0, 5, _CUT_ENC["topside"]),
+    "roast":      (0, 0, 5, _CUT_ENC["roast"]),
+    "ground":     (0, 0, 4, _CUT_ENC["ground"]),
+    "burger":     (0, 0, 4, _CUT_ENC["burger"]),
+    "meatloaf":   (0, 0, 4, _CUT_ENC["meatloaf"]),
+    "loin":       (4, 6, 7, _CUT_ENC["loin"]),
+    "belly":      (4, 6, 7, _CUT_ENC["belly"]),
+    "rib_pork":   (4, 6, 7, _CUT_ENC["rib_pork"]),
+    "rib_rack":   (4, 6, 5, _CUT_ENC["rib_rack"]),
+    "shoulder":   (4, 6, 5, _CUT_ENC["shoulder"]),
+    "butt":       (4, 6, 5, _CUT_ENC["butt"]),
+    "breast":     (5, 1, 0, _CUT_ENC["breast"]),
+    "duck_breast":(5, 3, 3, _CUT_ENC["breast"]),
+    "thigh":      (5, 1, 0, _CUT_ENC["thigh"]),
+    "whole":      (5, 1, 0, _CUT_ENC["whole"]),
+    "leg_lamb":   (2, 4, 5, _CUT_ENC["leg_lamb"]),
+    "fillet":     (1, 7, 6, _CUT_ENC["fillet"]),
+    "other":      (3, 5, 4, _CUT_ENC["other"]),
 }
 
 
@@ -108,60 +103,129 @@ def _encode(cut: str, doneness: str) -> tuple[int, int, int, int, int]:
 # Cook-name map — all presets from cook_presets.json expressed inline so that
 # no file I/O is needed at import time (avoids the HA blocking-call warning).
 # Derived from: Category.label + Cut.label + Doneness.label → _encode(cut_id, don_id)
-# Update this dict when cook_presets.json gains new cuts.
+# Update these maps when cook_presets.json changes — test_predictor.py regenerates
+# them from the JSON and fails on any difference.
 # ---------------------------------------------------------------------------
 
 _COOK_NAME_MAP: dict[str, tuple[int, int, int, int, int]] = {
     # Beef — Sirloin
-    "Beef Sirloin Rare":               _encode("sirloin",    "rare"),
-    "Beef Sirloin Medium Rare":        _encode("sirloin",    "medium_rare"),
-    "Beef Sirloin Medium":             _encode("sirloin",    "medium"),
-    "Beef Sirloin Medium Well":        _encode("sirloin",    "medium_well"),
-    "Beef Sirloin Well Done":          _encode("sirloin",    "well_done"),
+    "Beef Sirloin Rare":                _encode("sirloin",     "rare"),
+    "Beef Sirloin Medium Rare":         _encode("sirloin",     "medium_rare"),
+    "Beef Sirloin Medium":              _encode("sirloin",     "medium"),
+    "Beef Sirloin Medium Well":         _encode("sirloin",     "medium_well"),
+    "Beef Sirloin Well Done":           _encode("sirloin",     "well_done"),
     # Beef — Rib Eye
-    "Beef Rib Eye Rare":               _encode("rib_eye",    "rare"),
-    "Beef Rib Eye Medium Rare":        _encode("rib_eye",    "medium_rare"),
-    "Beef Rib Eye Medium":             _encode("rib_eye",    "medium"),
-    "Beef Rib Eye Medium Well":        _encode("rib_eye",    "medium_well"),
-    "Beef Rib Eye Well Done":          _encode("rib_eye",    "well_done"),
+    "Beef Rib Eye Rare":                _encode("rib_eye",     "rare"),
+    "Beef Rib Eye Medium Rare":         _encode("rib_eye",     "medium_rare"),
+    "Beef Rib Eye Medium":              _encode("rib_eye",     "medium"),
+    "Beef Rib Eye Medium Well":         _encode("rib_eye",     "medium_well"),
+    "Beef Rib Eye Well Done":           _encode("rib_eye",     "well_done"),
     # Beef — Brisket
-    "Beef Brisket Fall Apart":         _encode("brisket",    "fall_apart"),
+    "Beef Brisket Fall Apart":          _encode("brisket",     "fall_apart"),
     # Beef — Burger
-    "Beef Burger Medium":              _encode("burger",     "medium"),
-    "Beef Burger Well Done":           _encode("burger",     "well_done"),
+    "Beef Burger Medium Rare":          _encode("burger",      "medium_rare"),
+    "Beef Burger Medium":               _encode("burger",      "medium"),
+    "Beef Burger Medium Well":          _encode("burger",      "medium_well"),
+    "Beef Burger Well Done":            _encode("burger",      "well_done"),
     # Beef — Roast
-    "Beef Roast Medium Rare":          _encode("roast",      "medium_rare"),
-    "Beef Roast Medium":               _encode("roast",      "medium"),
-    "Beef Roast Well Done":            _encode("roast",      "well_done"),
-    # Pork
-    "Pork Loin / Chop Medium":         _encode("loin",       "medium"),
-    "Pork Loin / Chop Well Done":      _encode("loin",       "well_done"),
-    "Pork Shoulder Pulled":            _encode("shoulder",   "pulled"),
-    "Pork Belly Well Done":            _encode("belly",      "well_done"),
-    "Pork Ribs Fall Apart":            _encode("rib_pork",   "fall_apart"),
-    # Poultry
-    "Poultry Chicken Breast Medium":   _encode("breast",       "medium"),
-    "Poultry Duck Breast Medium":      _encode("duck_breast",  "medium"),
-    "Poultry Thigh / Leg Well Done":   _encode("thigh",        "well_done"),
-    "Poultry Whole Bird Well Done":    _encode("whole",        "well_done"),
-    # Lamb
-    "Lamb Leg Rare":                   _encode("leg_lamb",   "rare"),
-    "Lamb Leg Medium Rare":            _encode("leg_lamb",   "medium_rare"),
-    "Lamb Leg Medium":                 _encode("leg_lamb",   "medium"),
-    "Lamb Leg Well Done":              _encode("leg_lamb",   "well_done"),
-    "Lamb Rack / Ribs Rare":           _encode("rib_rack",   "rare"),
-    "Lamb Rack / Ribs Medium Rare":    _encode("rib_rack",   "medium_rare"),
-    "Lamb Rack / Ribs Medium":         _encode("rib_rack",   "medium"),
-    "Lamb Shoulder Fall Apart":        _encode("shoulder",   "fall_apart"),
-    # Other
-    "Other Fish / Salmon Medium Rare": _encode("fillet",     "medium_rare"),
-    "Other Fish / Salmon Medium":      _encode("fillet",     "medium"),
-    "Other Other Medium":              _encode("other",      "medium"),
-    "Other Other Well Done":           _encode("other",      "well_done"),
+    "Beef Roast Medium Rare":           _encode("roast",       "medium_rare"),
+    "Beef Roast Medium":                _encode("roast",       "medium"),
+    "Beef Roast Well Done":             _encode("roast",       "well_done"),
+    # Pork — Loin / Chop
+    "Pork Loin / Chop Medium":          _encode("loin",        "medium"),
+    "Pork Loin / Chop Well Done":       _encode("loin",        "well_done"),
+    # Pork — Shoulder
+    "Pork Shoulder Pulled":             _encode("shoulder",    "pulled"),
+    # Pork — Belly
+    "Pork Belly Well Done":             _encode("belly",       "well_done"),
+    # Pork — Ribs
+    "Pork Ribs Fall Apart":             _encode("rib_pork",    "fall_apart"),
+    # Poultry — Chicken Breast
+    "Poultry Chicken Breast Medium":    _encode("breast",      "medium"),
+    # Poultry — Duck Breast
+    "Poultry Duck Breast Medium":       _encode("duck_breast", "medium"),
+    # Poultry — Thigh / Leg
+    "Poultry Thigh / Leg Well Done":    _encode("thigh",       "well_done"),
+    # Poultry — Whole Bird
+    "Poultry Whole Bird Well Done":     _encode("whole",       "well_done"),
+    # Lamb — Leg
+    "Lamb Leg Rare":                    _encode("leg_lamb",    "rare"),
+    "Lamb Leg Medium Rare":             _encode("leg_lamb",    "medium_rare"),
+    "Lamb Leg Medium":                  _encode("leg_lamb",    "medium"),
+    "Lamb Leg Well Done":               _encode("leg_lamb",    "well_done"),
+    # Lamb — Rack / Ribs
+    "Lamb Rack / Ribs Rare":            _encode("rib_rack",    "rare"),
+    "Lamb Rack / Ribs Medium Rare":     _encode("rib_rack",    "medium_rare"),
+    "Lamb Rack / Ribs Medium":          _encode("rib_rack",    "medium"),
+    # Lamb — Shoulder
+    "Lamb Shoulder Fall Apart":         _encode("shoulder",    "fall_apart"),
+    # Other — Fish / Salmon
+    "Other Fish / Salmon Medium Rare":  _encode("fillet",      "medium_rare"),
+    "Other Fish / Salmon Medium":       _encode("fillet",      "medium"),
+    # Other — Other
+    "Other Other Medium":               _encode("other",       "medium"),
+    "Other Other Well Done":            _encode("other",       "well_done"),
 }
 
+# 'Category Cut' → (cut id, ((doneness id, °C), ...)).  A cook started with a typed
+# temperature (no doneness picked) keeps its cut; the doneness nearest the target
+# is used.  Derived from cook_presets.json like _COOK_NAME_MAP.
+_CUT_NAME_MAP: dict[str, tuple[str, tuple[tuple[str, float], ...]]] = {
+    "Beef Sirloin":             ("sirloin", (('rare', 50.0), ('medium_rare', 54.0), ('medium', 60.0), ('medium_well', 65.0), ('well_done', 71.0))),
+    "Beef Rib Eye":             ("rib_eye", (('rare', 50.0), ('medium_rare', 54.0), ('medium', 60.0), ('medium_well', 65.0), ('well_done', 71.0))),
+    "Beef Brisket":             ("brisket", (('fall_apart', 96.0),)),
+    "Beef Burger":              ("burger", (('medium_rare', 55.0), ('medium', 60.0), ('medium_well', 65.0), ('well_done', 71.0))),
+    "Beef Roast":               ("roast", (('medium_rare', 57.0), ('medium', 60.0), ('well_done', 71.0))),
+    "Pork Loin / Chop":         ("loin", (('medium', 63.0), ('well_done', 71.0))),
+    "Pork Shoulder":            ("shoulder", (('pulled', 96.0),)),
+    "Pork Belly":               ("belly", (('well_done', 75.0),)),
+    "Pork Ribs":                ("rib_pork", (('fall_apart', 93.0),)),
+    "Poultry Chicken Breast":   ("breast", (('medium', 74.0),)),
+    "Poultry Duck Breast":      ("duck_breast", (('medium', 63.0),)),
+    "Poultry Thigh / Leg":      ("thigh", (('well_done', 82.0),)),
+    "Poultry Whole Bird":       ("whole", (('well_done', 82.0),)),
+    "Lamb Leg":                 ("leg_lamb", (('rare', 52.0), ('medium_rare', 57.0), ('medium', 63.0), ('well_done', 71.0))),
+    "Lamb Rack / Ribs":         ("rib_rack", (('rare', 52.0), ('medium_rare', 57.0), ('medium', 63.0))),
+    "Lamb Shoulder":            ("shoulder", (('fall_apart', 85.0),)),
+    "Other Fish / Salmon":      ("fillet", (('medium_rare', 52.0), ('medium', 60.0))),
+    "Other Other":              ("other", (('medium', 70.0), ('well_done', 75.0))),
+}
+
+# 'Category' → a representative cut id, whose category/animal codes are used with
+# a generic cut — for a cook started with only a category picked.
+_CATEGORY_NAME_MAP: dict[str, str] = {"Beef": "sirloin", "Pork": "loin", "Poultry": "breast", "Lamb": "leg_lamb", "Other": "fillet"}
+
+
 # Fallback encoding for "Custom" or any unrecognised cook name.
-_DEFAULT_MEAT: tuple[int, int, int, int, int] = _encode("steak", "medium")
+# Fallback for a cook name the maps do not know ("Custom", "Cook", legacy exports).
+# MUST equal retrain.py's _MEAT_FALLBACK: the model is trained with unknown names
+# encoded as a generic "other" cook, so serving them as anything else (this used to
+# be a beef steak) applies behaviour the model never learned for them.  retrain.py
+# refuses to compile a model if the two differ.
+_DEFAULT_MEAT: tuple[int, int, int, int, int] = _encode("other", "medium")
+
+
+def resolve_meat(cook_name: str, target_temp: float | None = None) -> tuple[int, int, int, int, int]:
+    """Meat encoding for a cook name, degrading gracefully:
+
+    - full preset name ("Beef Burger Medium")        → that preset;
+    - category + cut ("Beef Burger", typed target)    → that cut, doneness nearest the target;
+    - category only ("Beef")                          → that category with a generic cut;
+    - anything else ("Custom", "")                    → _DEFAULT_MEAT, exactly as at training time.
+    """
+    name = (cook_name or "").strip()
+    if name in _COOK_NAME_MAP:
+        return _COOK_NAME_MAP[name]
+    if name in _CUT_NAME_MAP:
+        cut_id, doneness = _CUT_NAME_MAP[name]
+        don_id = "medium"
+        if doneness and target_temp is not None:
+            don_id = min(doneness, key=lambda d: abs(d[1] - float(target_temp)))[0]
+        return _encode(cut_id, don_id)
+    if name in _CATEGORY_NAME_MAP:
+        cat_e, ani_e, _, _ = _CUT_LOOKUP.get(_CATEGORY_NAME_MAP[name], _CUT_LOOKUP["other"])
+        return (cat_e, ani_e, _CUT_TYPE_ENC["other"], _CUT_ENC["other"], _DONENESS_ENC["medium"])
+    return _DEFAULT_MEAT
 
 # Feature order must match the column order used during training exactly.
 _FEATURE_ORDER: list[str] = [
@@ -232,7 +296,7 @@ def _build_features(
     # Std is computed over the same recent window for consistency.
     amb_std    = (sum((a - amb_mean) ** 2 for a in window_amb) / len(window_amb)) ** 0.5 if len(window_amb) > 1 else 0.0
 
-    cat, ani, ctt, cut, prs = _COOK_NAME_MAP.get(cook_name, _DEFAULT_MEAT)
+    cat, ani, ctt, cut, prs = resolve_meat(cook_name, target_temp)
 
     return {
         "T_internal_current":    T_current,

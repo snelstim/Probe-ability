@@ -265,13 +265,21 @@ function _loadPresets() {
 // cook_name is language-independent and keeps matching ml_predictor's lookup
 // table.  Never swap these to localised labels.
 function _makeCookName(category, cut, doneness) {
-  if (!_presets || !category || !cut || !doneness) return "Custom";
+  // Degrades gracefully so a typed temperature keeps the meat identity:
+  //   category+cut+doneness → "Beef Burger Medium"  (full preset)
+  //   category+cut          → "Beef Burger"         (typed temperature: the model
+  //                           uses the cut and the doneness nearest the target)
+  //   category only         → "Beef"
+  //   nothing               → "Custom"
+  // ml_predictor.resolve_meat() understands all four forms.
+  if (!_presets || !category) return "Custom";
   const catObj = _presets.categories.find((c) => c.id === category);
-  const cutObj = catObj?.cuts.find((c) => c.id === cut);
-  const donObj = cutObj?.doneness.find((d) => d.id === doneness);
-  return catObj && cutObj && donObj
-    ? `${catObj.label} ${cutObj.label} ${donObj.label}`
-    : "Custom";
+  if (!catObj) return "Custom";
+  const cutObj = cut ? catObj.cuts.find((c) => c.id === cut) : null;
+  const donObj = cutObj && doneness ? cutObj.doneness.find((d) => d.id === doneness) : null;
+  if (cutObj && donObj) return `${catObj.label} ${cutObj.label} ${donObj.label}`;
+  if (cutObj) return `${catObj.label} ${cutObj.label}`;
+  return catObj.label;
 }
 
 // Render the 3-step hierarchical preset selector for one idle slot.

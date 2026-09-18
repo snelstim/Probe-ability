@@ -14,7 +14,7 @@ import os
 sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "custom_components", "probe_ability"))
 
-from predictor import CookPredictor, pull_temp
+from predictor import CookPredictor, pull_temp, reading_plausible
 
 
 def simulate_cook(
@@ -183,6 +183,55 @@ def check_rest_and_pull() -> None:
     print(f"All {checks} checks passed.")
 
 
+def check_names_and_readings() -> None:
+    """Cook-name resolution (full / cut / category / fallback), inline-map parity with
+    cook_presets.json, training-parity fallback, and the reading plausibility filter."""
+    import json
+    import ml_predictor as mlp
+    checks = 0
+
+    def ok(cond, what):
+        nonlocal checks
+        assert cond, what
+        checks += 1
+
+    # inline maps == cook_presets.json (the file the card and retrain.py use)
+    here = os.path.dirname(os.path.abspath(__file__))
+    presets = json.load(open(os.path.join(here, "custom_components", "probe_ability", "www", "cook_presets.json")))
+    full, cuts, cats = {}, {}, {}
+    for cat in presets["categories"]:
+        cats[cat["label"]] = cat["cuts"][0]["id"]
+        for cut in cat["cuts"]:
+            cuts[f"{cat['label']} {cut['label']}"] = (cut["id"], tuple((d["id"], float(d["temp"])) for d in cut["doneness"]))
+            for d in cut["doneness"]:
+                full[f"{cat['label']} {cut['label']} {d['label']}"] = mlp._encode(cut["id"], d["id"])
+    ok(mlp._COOK_NAME_MAP == full, f"_COOK_NAME_MAP drifted from cook_presets.json: {set(mlp._COOK_NAME_MAP) ^ set(full)}")
+    ok(mlp._CUT_NAME_MAP == cuts, "_CUT_NAME_MAP drifted from cook_presets.json")
+    ok(mlp._CATEGORY_NAME_MAP == cats, "_CATEGORY_NAME_MAP drifted from cook_presets.json")
+
+    # fallback = what training used ("other"), never a steak
+    ok(mlp._DEFAULT_MEAT == mlp._encode("other", "medium") == (3, 5, 4, 12, 2), f"fallback {mlp._DEFAULT_MEAT}")
+    ok(mlp.resolve_meat("Custom") == mlp._DEFAULT_MEAT and mlp.resolve_meat("") == mlp._DEFAULT_MEAT, "unknown names -> fallback")
+
+    # degradation ladder
+    ok(mlp.resolve_meat("Beef Burger Medium") == mlp._encode("burger", "medium"), "full preset")
+    ok(mlp.resolve_meat("Beef Burger", 56.0) == mlp._encode("burger", "medium_rare"), "cut + typed 56 -> nearest doneness (55 medium rare)")
+    ok(mlp.resolve_meat("Beef Burger", 69.0) == mlp._encode("burger", "well_done"), "cut + typed 69 -> nearest doneness (71 well done)")
+    ok(mlp.resolve_meat("Beef Burger") == mlp._encode("burger", "medium"), "cut, no target -> medium")
+    ok(mlp.resolve_meat("Beef")[:2] == mlp._encode("sirloin", "medium")[:2] and mlp.resolve_meat("Beef")[2:] == (4, 12, 2), "category only -> beef codes, generic cut")
+    ok(mlp.resolve_meat("Poultry Whole Bird Well Done") == mlp._encode("whole", "well_done"), "multi-word preset")
+
+    # reading plausibility filter
+    ok(reading_plausible(20.0, 100.0) and reading_plausible(-5.0, 0.0), "normal readings accepted")
+    ok(not reading_plausible(-1838.2, 68.5), "glitch -1838 C rejected")
+    ok(not reading_plausible(20.0, 2562.0) and not reading_plausible(float("nan"), 100.0), "bogus ambient / NaN rejected")
+    p = CookPredictor(target_temp=56.0)
+    p.add_reading(0.0, 9.0, 36.4); p.add_reading(31.7, -1838.2, 68.5); p.add_reading(61.9, 11.0, 85.4)
+    ok(len(p.readings) == 2 and p.readings[1][1] == 11.0, f"glitch never entered the cook: {p.readings}")
+
+    print(f"All {checks} checks passed.")
+
+
 if __name__ == "__main__":
     print("\n━━━ TEST 1: Normal roast (no stall) ━━━\n")
     simulate_cook(
@@ -207,3 +256,6 @@ if __name__ == "__main__":
 
     print("\n━━━ TEST 4: pull temperature + rest detection (asserts) ━━━\n")
     check_rest_and_pull()
+
+    print("\n━━━ TEST 5: cook-name resolution, preset parity, reading filter (asserts) ━━━\n")
+    check_names_and_readings()

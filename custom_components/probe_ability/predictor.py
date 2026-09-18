@@ -27,6 +27,23 @@ class PredictionResult:
     prediction_model: str = ""  # "ml" | "physics" | "" during collecting
 
 
+# ── Reading plausibility ─────────────────────────────────────────────────────
+# BLE / sensor glitches occasionally deliver impossible values (an internal
+# temperature of -1838 °C was seen in a real export).  Such readings are dropped
+# before they enter the cook: they would poison the heating-rate features and the
+# exported data.  The training loaders already skip them.
+INTERNAL_MIN_C, INTERNAL_MAX_C = -30.0, 300.0
+AMBIENT_MIN_C, AMBIENT_MAX_C = -50.0, 600.0
+
+
+def reading_plausible(internal_temp: float, ambient_temp: float) -> bool:
+    """False for NaN or out-of-range temperatures."""
+    if internal_temp != internal_temp or ambient_temp != ambient_temp:   # NaN
+        return False
+    return (INTERNAL_MIN_C <= internal_temp <= INTERNAL_MAX_C
+            and AMBIENT_MIN_C <= ambient_temp <= AMBIENT_MAX_C)
+
+
 # ── Carryover / pull temperature ─────────────────────────────────────────────
 # Carryover (the rise after the meat leaves the heat) is driven by the core-to-
 # surface temperature gradient, which tracks the *heating rate* at the pull
@@ -213,7 +230,9 @@ class CookPredictor:
     def add_reading(
         self, timestamp: float, internal_temp: float, ambient_temp: float
     ) -> None:
-        """Add a temperature reading."""
+        """Add a temperature reading (silently ignored when physically implausible)."""
+        if not reading_plausible(internal_temp, ambient_temp):
+            return
         self.readings.append((timestamp, internal_temp, ambient_temp))
         if self._start_temp is None:
             self._start_temp = internal_temp

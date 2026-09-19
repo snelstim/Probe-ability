@@ -5,7 +5,11 @@
  * Shows cook status, predictions, and lets you start/stop cooks.
  *
  * Features:
- *  - Individual mode: up to 3 independent probes (e.g. 3 steaks)
+ *  - Individual mode: up to 4 independent probes (e.g. 4 steaks), each in its
+ *    own tile — stacked, side by side or in a 2-column grid (probe_layout),
+ *    optionally folding to a one-line summary (collapsible).  Probes are
+ *    called "Probe N" unless named in the integration's Reconfigure dialog
+ *    (e.g. "Green") — names arrive in the probe_names sensor attribute.
  *  - Combined mode: multiple probes on one cook (e.g. brisket)
  *  - Circular SVG timer with two display modes:
  *      ⏱ Countdown — ring drains as time passes
@@ -19,8 +23,9 @@
  * Card config:
  *   type: custom:probe-ability-card
  *   entity: sensor.probe_ability_time_remaining
- *   eta_entity: sensor.probe_ability_estimated_completion  (optional)
  *   entry_id: <your_entry_id>                               (optional)
+ *   probe_layout: vertical | horizontal | grid              (optional)
+ *   collapsible: true | false                               (optional)
  */
 
 const CARD_VERSION = "0.10.5";
@@ -38,12 +43,12 @@ const CARD_VERSION = "0.10.5";
 const I18N = {
   en: {
     start_cook: "Start Cook",
-    start_probe: "Start Probe {n}",
+    start_probe: "Start {name}",
     cancel_cook: "Cancel Cook",
     stop_cook: "Stop Cook",
-    cancel_probe: "Cancel Probe {n}",
-    new_cook_probe: "New Cook (Probe {n})",
-    stop_probe: "Stop Probe {n}",
+    cancel_probe: "Cancel {name}",
+    new_cook_probe: "New Cook ({name})",
+    stop_probe: "Stop {name}",
     new_cook: "New Cook",
     combined: "🔗 Combined",
     individual_toggle: "⚡ Individual",
@@ -101,29 +106,29 @@ const I18N = {
     switch_to_countdown: "Switch to countdown view",
     hours_short: "h",
     minutes_short: "m",
+    expand: "Show details",
+    collapse: "Hide details",
     ed_sec_general: "General",
-    ed_sec_probe1: "Probe 1",
-    ed_sec_probe2: "Probe 2",
-    ed_sec_probe3: "Probe 3",
     ed_entity: "Time remaining entity (required)",
-    ed_eta: "ETA entity (optional)",
     ed_ambient: "Ambient sensor (optional)",
     ed_target_entity: "Target temperature input_number — probe 1 / combined (optional)",
-    ed_target_entity_2: "Target temperature input_number — probe 2 (optional)",
-    ed_target_entity_3: "Target temperature input_number — probe 3 (optional)",
-    ed_probe1: "Probe 1 sensor (optional)",
-    ed_probe2: "Probe 2 sensor (optional)",
-    ed_probe3: "Probe 3 sensor (optional)",
+    ed_target_entity_n: "Target temperature input_number — probe {n} (optional)",
+    ed_probe_n: "Probe {n} sensor (optional)",
     ed_entry: "Entry ID (optional, for multi-instance)",
+    ed_layout: "Probe layout",
+    layout_vertical: "Vertical — stacked",
+    layout_horizontal: "Horizontal — side by side",
+    layout_grid: "Grid — 2 columns",
+    ed_collapsible: "Collapsible tiles — tap a probe header to open or close it",
   },
   nl: {
     start_cook: "Kook starten",
-    start_probe: "Probe {n} starten",
+    start_probe: "{name} starten",
     cancel_cook: "Kook annuleren",
     stop_cook: "Kook stoppen",
-    cancel_probe: "Probe {n} annuleren",
-    new_cook_probe: "Nieuwe kook (probe {n})",
-    stop_probe: "Probe {n} stoppen",
+    cancel_probe: "{name} annuleren",
+    new_cook_probe: "Nieuwe kook ({name})",
+    stop_probe: "{name} stoppen",
     new_cook: "Nieuwe kook",
     combined: "🔗 Gecombineerd",
     individual_toggle: "⚡ Individueel",
@@ -181,20 +186,20 @@ const I18N = {
     switch_to_countdown: "Naar aftelweergave",
     hours_short: "u",
     minutes_short: "m",
+    expand: "Details tonen",
+    collapse: "Details verbergen",
     ed_sec_general: "Algemeen",
-    ed_sec_probe1: "Probe 1",
-    ed_sec_probe2: "Probe 2",
-    ed_sec_probe3: "Probe 3",
     ed_entity: "Time remaining-entiteit (verplicht)",
-    ed_eta: "ETA-entiteit (optioneel)",
     ed_ambient: "Omgevingssensor (optioneel)",
     ed_target_entity: "Doeltemperatuur-input_number — probe 1 / gecombineerd (optioneel)",
-    ed_target_entity_2: "Doeltemperatuur-input_number — probe 2 (optioneel)",
-    ed_target_entity_3: "Doeltemperatuur-input_number — probe 3 (optioneel)",
-    ed_probe1: "Probe 1-sensor (optioneel)",
-    ed_probe2: "Probe 2-sensor (optioneel)",
-    ed_probe3: "Probe 3-sensor (optioneel)",
+    ed_target_entity_n: "Doeltemperatuur-input_number — probe {n} (optioneel)",
+    ed_probe_n: "Probe {n}-sensor (optioneel)",
     ed_entry: "Entry-ID (optioneel, voor meerdere instanties)",
+    ed_layout: "Probe-indeling",
+    layout_vertical: "Verticaal — gestapeld",
+    layout_horizontal: "Horizontaal — naast elkaar",
+    layout_grid: "Raster — 2 kolommen",
+    ed_collapsible: "Inklapbare tegels — tik op een probe-kop om te openen of te sluiten",
   },
 };
 
@@ -360,6 +365,18 @@ function _presetSelector(idSuffix, slotState, unit = "C") {
 // SVG ring constants (r=50, cx=cy=60)
 const CIRC = 314.16; // 2π × 50
 
+// Most probes one integration instance can have (internal_sensor … internal_sensor_4).
+const MAX_PROBES = 4;
+
+// Card-config key of the target-temp helper for probe index i.
+const _targetKey = (i) => (i === 0 ? "target_temp_entity" : `target_temp_entity_${i + 1}`);
+
+// Data-collection phase: readings needed before the first prediction, the
+// assumed reading interval, and the data span the predictor waits for.
+const NEEDED_READINGS = 10;
+const READING_INTERVAL_S = 30;
+const REQUIRED_SPAN_S = 600;
+
 // Brand logo — inline SVG so it works without any extra file reference.
 // A unique clipPath id avoids collisions when multiple cards are on the same page.
 const LOGO_SVG = `<svg width="32" height="32" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" style="flex-shrink:0;">
@@ -434,14 +451,18 @@ class CookPredictorCard extends HTMLElement {
     this._hass = null;
     this._probeSensors = config.probe_sensors || [];
     this._ambientSensor = config.ambient_sensor || null;
-    // Per-probe target-temp helpers (index 0 = probe 1 / combined mode).
-    this._targetTempEntities = [
-      config.target_temp_entity   || null,
-      config.target_temp_entity_2 || null,
-      config.target_temp_entity_3 || null,
-    ];
+    // Per-probe target-temp helpers (index 0 = probe 1 / combined mode):
+    // target_temp_entity, target_temp_entity_2 … target_temp_entity_4.
+    this._targetTempEntities = Array.from({ length: MAX_PROBES }, (_, i) => config[_targetKey(i)] || null);
+    // Individual-mode tile arrangement (see _tilesContainer) and whether tiles
+    // fold to a summary row (see _probeTile).  Unknown values — including the
+    // pre-release "collapsible" — fall back to the defaults: vertical, folding.
+    this._probeLayout = ["vertical", "horizontal", "grid"].includes(config.probe_layout)
+      ? config.probe_layout
+      : "vertical";
+    this._collapsible = config.collapsible !== false;
     // Per-slot form state: { category, cut, doneness, temp }
-    // Key: "combined" or probe index 0/1/2.
+    // Key: "combined" or a probe index.
     // Backed by localStorage so selections survive page navigation.
     try {
       this._idleState = JSON.parse(localStorage.getItem("probe_ability_idle_state") || "{}");
@@ -531,7 +552,7 @@ class CookPredictorCard extends HTMLElement {
       this._idleState[key] = { ...(this._idleState[key] || {}), temp };
     };
     saveTemp("combined", "cp-target-combined");
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < MAX_PROBES; i++) {
       saveTemp(i, `cp-target-${i}`);           // individual idle slot
       saveTemp(i, `cp-target-idle-${i}`);      // idle slot inside active-individual view
       saveTemp(`sp-${i}`, `cp-target-sp-${i}`); // single-probe view
@@ -658,7 +679,7 @@ class CookPredictorCard extends HTMLElement {
   }
 
   // Persist the cook name that was active when a cook was started.
-  // Key: "combined" or probe index 0/1/2.
+  // Key: "combined" or a probe index.
   _saveActivePreset(key, cookName) {
     try {
       const store = JSON.parse(localStorage.getItem("probe_ability_active_presets") || "{}");
@@ -736,6 +757,13 @@ class CookPredictorCard extends HTMLElement {
     return 0;
   }
 
+  // Display name for probe i (0-based): the name configured in the
+  // integration, else the localised "Probe N".
+  _probeName(i) {
+    const n = this._probeNames && this._probeNames[i];
+    return typeof n === "string" && n.trim() ? n.trim() : t("probe_n", { n: i + 1 });
+  }
+
   // Persistent display mode for the SVG timer (countdown vs temp-up)
   get _timerMode() {
     return localStorage.getItem("probe_ability_timer_mode") || "countdown";
@@ -754,6 +782,10 @@ class CookPredictorCard extends HTMLElement {
   _render() {
     if (!this._hass) return;
     _setLang(this._hass);
+    // A full rebuild discards any open stop-confirmation prompt.
+    this._confirmPending = false;
+    // Card-size hint; only the individual-mode views set it (see getCardSize).
+    this._lastTileCount = null;
 
     const entity = this._config.entity;
     const state = this._hass.states[entity];
@@ -783,6 +815,17 @@ class CookPredictorCard extends HTMLElement {
 
     // Keep probe_count in sync while we have live attributes
     if (attrs.probe_count) this._cacheProbeCount(attrs.probe_count);
+
+    // Probe display names configured in the integration ("Green" …); cached
+    // per entity so the idle view keeps them while attributes are missing.
+    const namesKey = `probe_ability_probe_names:${entity}`;
+    if (Array.isArray(attrs.probe_names)) {
+      this._probeNames = attrs.probe_names;
+      try { localStorage.setItem(namesKey, JSON.stringify(attrs.probe_names)); } catch (e) {}
+    } else if (!this._probeNames) {
+      try { this._probeNames = JSON.parse(localStorage.getItem(namesKey) || "[]"); }
+      catch (e) { this._probeNames = []; }
+    }
 
     if (!isActive) {
       this._renderIdle(attrs);
@@ -855,6 +898,7 @@ class CookPredictorCard extends HTMLElement {
       for (const i of available) {
         this._wireIdleProbeSlot(i);
       }
+      this._wireTileToggles(available.length);
     } else {
       this._wireIdleCombined();
     }
@@ -934,15 +978,15 @@ class CookPredictorCard extends HTMLElement {
 
   _idleIndividualSlots(available) {
     const unit = this._tempUnit || "C";
+    const shown = available.length;
     let html = "";
+    let open = 0;
     for (const i of available) {
       const state = this._slotState(i);
-      html += `
-        <div style="border:1px solid var(--divider-color);border-radius:10px;padding:14px;margin-bottom:12px;">
-          <div style="font-size:0.9em;font-weight:600;margin-bottom:10px;color:var(--primary-color);">
-            ${t("probe_n", { n: i + 1 })}
-          </div>
-          <div id="cp-form-${i}">
+      const expanded = this._isExpanded(i, shown);
+      if (expanded) open++;
+      const detail = `
+          <div id="cp-form-${i}" style="margin-top:6px;">
             ${_presetSelector(i, state, unit)}
             <div style="margin-top:4px;">
               <label style="display:block;font-size:0.8em;color:var(--secondary-text-color);margin-bottom:4px;">${t("target_label", { unit: _unitLabel(unit) })}</label>
@@ -953,11 +997,250 @@ class CookPredictorCard extends HTMLElement {
             style="width:100%;padding:10px;margin-top:10px;background:var(--primary-color);
                    color:var(--text-primary-color);border:none;border-radius:8px;
                    font-size:0.9em;font-weight:500;cursor:pointer;">
-            ${t("start_probe", { n: i + 1 })}
-          </button>
-        </div>`;
+            ${t("start_probe", { name: this._probeName(i) })}
+          </button>`;
+      html += this._probeTile(i, {
+        expanded,
+        titleColor: "var(--primary-color)",
+        subtitle: this._idleCookName(i),
+        summary: this._idleSummary(state),
+        detail,
+      });
     }
-    return html;
+    this._lastTileCount = shown;
+    this._lastOpenCount = open;
+    return this._tilesContainer(html, shown);
+  }
+
+  // ── Probe tiles ───────────────────────────────────────────────────────
+  //
+  // Both individual-mode views (idle, and active with mixed probe states)
+  // render one tile per probe.  With probe_layout "collapsible" (default)
+  // the tile header doubles as a summary row that toggles the detail, so a
+  // 4-probe card is a few short rows plus whatever the user opened.  With
+  // "grid" every tile is open and tiles flow into 2 columns on wide cards.
+
+  // Preset chosen for an idle slot, or "" for a custom temperature.
+  _idleCookName(i) {
+    const s = this._slotState(i);
+    const name = _makeCookName(s.category, s.cut, s.doneness);
+    return name === "Custom" ? "" : name;
+  }
+
+  _idleSummary(slotState) {
+    const unit = this._tempUnit || "C";
+    return {
+      primary: `${_toDisp(slotState.temp, unit)}${_unitLabel(unit)}`,
+      secondary: t("not_started"),
+    };
+  }
+
+  // Collapsed-row figures for one probe: a bold primary value, a small
+  // secondary line and a thin progress bar, so the key facts (and any alert)
+  // stay visible without opening the tile.  pd is a probeData entry from
+  // _renderActiveIndividual; phaseColor its phase colour.
+  _probeSummary(i, pd, shouldPull, phaseColor) {
+    if (!pd.active) return this._idleSummary(this._slotState(i));
+    const unit = this._tempUnit || "C";
+    const fmt = (v) => `${_toDisp(v, unit)}${_unitLabel(unit)}`;
+    const cur = pd.currentTemp != null ? fmt(pd.currentTemp) : "—";
+
+    if (pd.phase === "collecting") {
+      // Same two phases as the open tile: readings, then the data span.
+      const count = pd.readingsCount || 0;
+      const color = "var(--warning-color)";
+      if (count < NEEDED_READINGS) {
+        return {
+          primary: cur,
+          secondary: t("readings", { count, needed: NEEDED_READINGS }),
+          progress: { pct: (count / NEEDED_READINGS) * 100, color },
+        };
+      }
+      const elapsedS = count * READING_INTERVAL_S;
+      const spanRemainS = Math.max(0, REQUIRED_SPAN_S - elapsedS);
+      const readyAt = spanRemainS > 0 ? etaFromMinutes(spanRemainS / 60) : "";
+      return {
+        primary: cur,
+        secondary: readyAt ? t("ready_at", { time: readyAt }) : t("building_span"),
+        progress: { pct: Math.min((elapsedS / REQUIRED_SPAN_S) * 100, 100), color },
+      };
+    }
+    if (pd.phase === "done") {
+      return {
+        primary: t("target_reached"),
+        primaryColor: "var(--success-color)",
+        secondary: pd.currentTemp != null ? cur : "",
+        progress: { pct: 100, color: "var(--success-color)" },
+      };
+    }
+
+    // Prediction phases: temperature progress (current → target), coloured
+    // like the open tile's bar.
+    const tgt = pd.targetTemp != null ? fmt(pd.targetTemp) : "—";
+    const primary = pd.timeRemaining ? formatTime(pd.timeRemaining) : "—";
+    const progress = (pd.currentTemp != null && pd.targetTemp > 0)
+      ? { pct: Math.min((pd.currentTemp / pd.targetTemp) * 100, 100),
+          color: shouldPull ? "var(--warning-color)" : phaseColor }
+      : null;
+    if (shouldPull) {
+      return {
+        primary,
+        primaryColor: "var(--warning-color)",
+        secondary: t("remove_from_heat_now"),
+        secondaryColor: "var(--warning-color)",
+        progress,
+      };
+    }
+    if (pd.phase === "unreachable") {
+      return { primary, secondary: t("unreachable_short"), secondaryColor: "var(--error-color)", progress };
+    }
+    if (pd.phase === "stall") {
+      return { primary, secondary: `${cur} → ${tgt} ${t("stalled")}`, secondaryColor: "var(--error-color)", progress };
+    }
+    return { primary, secondary: `${cur} → ${tgt}`, progress };
+  }
+
+  // One probe tile.
+  //   opts.expanded   — render the detail block?
+  //   opts.titleColor — colour of "Probe N" (and its icon)
+  //   opts.icon       — mdi icon after the name, "" for none
+  //   opts.subtitle   — preset name shown after the name while collapsed
+  //   opts.rightHtml  — header right side while open (target, confidence…)
+  //   opts.summary    — { primary, secondary, primaryColor?, secondaryColor?, progress? } while
+  //                     collapsed; progress = { pct, color } draws a thin bar under the row
+  //   opts.alert      — warning-coloured border (pull-from-heat)
+  //   opts.detail     — HTML of the detail block (content + action button)
+  _probeTile(i, opts) {
+    const collapsible = this._collapsible;
+    const expanded = !!opts.expanded;
+    const icon = opts.icon
+      ? `<ha-icon icon="${opts.icon}" style="--mdc-icon-size:16px;vertical-align:middle;margin-left:4px;"></ha-icon>`
+      : "";
+    const subtitle = !expanded && opts.subtitle
+      ? `<span style="font-weight:400;color:var(--secondary-text-color);"> · ${opts.subtitle}</span>`
+      : "";
+    const sm = opts.summary || {};
+    const right = expanded
+      ? (opts.rightHtml || "")
+      : `<div style="text-align:right;line-height:1.3;">
+              <div style="font-size:0.95em;font-weight:600;color:${sm.primaryColor || "var(--primary-text-color)"};">${sm.primary ?? ""}</div>
+              ${sm.secondary
+                ? `<div style="font-size:0.72em;color:${sm.secondaryColor || "var(--secondary-text-color)"};">${sm.secondary}</div>`
+                : ""}
+            </div>`;
+    const chevron = collapsible
+      ? `<ha-icon icon="mdi:chevron-${expanded ? "up" : "down"}"
+             style="--mdc-icon-size:20px;color:var(--secondary-text-color);flex-shrink:0;margin:-2px -4px 0 0;"></ha-icon>`
+      : "";
+    const toggle = collapsible
+      ? ` data-toggle-probe="${i}" role="button" tabindex="0" title="${expanded ? t("collapse") : t("expand")}"`
+      : "";
+    // Open tile: the short title keeps its width and the right block (which
+    // may hold a long preset name) wraps — or, in a narrow tile of a
+    // multi-column layout, drops onto its own line under the title (the
+    // header is allowed to wrap).  Collapsed row: single line — the right
+    // block keeps its width and the title (name · preset) is ellipsised.
+    const titleStyle = expanded
+      ? "flex-shrink:0;white-space:nowrap;"
+      : "min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;line-height:1.5;";
+    const rightStyle = expanded ? "min-width:0;margin-left:auto;" : "flex-shrink:0;";
+    // Collapsed headers get no inline flex-wrap so the container-query rule in
+    // _tilesContainer (wrap inside narrow tiles) can apply.
+    const headerWrap = expanded ? "flex-wrap:wrap;" : "";
+    const bar = !expanded && sm.progress
+      ? `<div style="background:var(--divider-color);border-radius:3px;height:4px;overflow:hidden;margin-top:8px;">
+              <div style="background:${sm.progress.color};height:100%;width:${sm.progress.pct.toFixed(1)}%;
+                          border-radius:3px;transition:width 1s ease;"></div>
+            </div>`
+      : "";
+    return `
+        <div class="pa-tile" style="border:1px solid ${opts.alert ? "var(--warning-color)" : "var(--divider-color)"};border-radius:10px;
+                    padding:12px;container-type:inline-size;${this._probeLayout === "vertical" ? "margin-bottom:10px;" : ""}">
+          <div${toggle} class="pa-head ${expanded ? "pa-open" : "pa-collapsed"}"
+               style="display:flex;${headerWrap}justify-content:space-between;align-items:flex-start;gap:8px;
+                      margin-bottom:${expanded ? 4 : 0}px;${collapsible ? "cursor:pointer;user-select:none;" : ""}">
+            <div class="pa-title" style="${titleStyle}font-size:0.9em;font-weight:600;color:${opts.titleColor};">
+              ${this._probeName(i)}${icon}${subtitle}
+            </div>
+            <div class="pa-right" style="display:flex;align-items:flex-start;gap:6px;${rightStyle}">
+              ${right}${chevron}
+            </div>
+          </div>
+          ${bar}
+          ${expanded ? opts.detail : ""}
+        </div>`;
+  }
+
+  // Wraps the `count` probe tiles according to probe_layout:
+  //   vertical   — a plain stack (tiles carry their own bottom margin);
+  //   grid       — 2 columns: each track is at least half the width (never
+  //                more than 2 columns, however wide the card) and at least
+  //                150 px (a very narrow card falls back to one column);
+  //   horizontal — all tiles in one row when each can be ≥150 px wide,
+  //                otherwise as many per row as fit.  Two probes sit side by
+  //                side on any card from ~350 px; four need ~660 px.
+  //
+  // A collapsed row normally keeps to one line (name · preset | figures), but a
+  // narrow tile in a multi-column layout has no room for both, so inside tiles
+  // under ~210 px of content width the figures drop to a second line.  The
+  // tile is a container-query container; browsers without container queries
+  // just keep the single squeezed line.
+  _tilesContainer(html, count) {
+    const css = `<style>
+      @container (max-width: 210px) {
+        .pa-head.pa-collapsed { flex-wrap: wrap; }
+        .pa-head.pa-collapsed > .pa-title { flex-basis: 100%; }
+        .pa-head.pa-collapsed > .pa-right { margin-left: auto; }
+      }
+    </style>`;
+    if (this._probeLayout === "vertical") return css + html;
+    const n = Math.max(1, count || 1);
+    const share = this._probeLayout === "grid"
+      ? "calc(50% - 5px)"
+      : `calc((100% - ${(n - 1) * 10}px) / ${n})`;
+    return `${css}<div style="display:grid;
+                        grid-template-columns:repeat(auto-fit,minmax(max(150px,${share}),1fr));
+                        gap:10px;align-items:start;margin-bottom:10px;">${html}</div>`;
+  }
+
+  // Per-card map probeIndex → expanded, keyed by the card's entity so several
+  // instances on one page don't share state.  Untouched tiles default to open
+  // when at most two probes are shown (the card looks as it always did) and to
+  // collapsed once a third probe would make it scroll.
+  _expandedMap() {
+    try {
+      const all = JSON.parse(localStorage.getItem("probe_ability_expanded") || "{}");
+      return all[this._config.entity] || {};
+    } catch (e) { return {}; }
+  }
+
+  _isExpanded(i, shownCount) {
+    if (!this._collapsible) return true;
+    const v = this._expandedMap()[i];
+    return typeof v === "boolean" ? v : shownCount <= 2;
+  }
+
+  _toggleExpanded(i, shownCount) {
+    const next = !this._isExpanded(i, shownCount);
+    try {
+      const all = JSON.parse(localStorage.getItem("probe_ability_expanded") || "{}");
+      all[this._config.entity] = { ...(all[this._config.entity] || {}), [i]: next };
+      localStorage.setItem("probe_ability_expanded", JSON.stringify(all));
+    } catch (e) { /* ignore quota errors */ }
+    this._render();
+  }
+
+  _wireTileToggles(shownCount) {
+    this.querySelectorAll("[data-toggle-probe]").forEach((el) => {
+      const i = parseInt(el.dataset.toggleProbe, 10);
+      el.addEventListener("click", () => this._toggleExpanded(i, shownCount));
+      el.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          this._toggleExpanded(i, shownCount);
+        }
+      });
+    });
   }
 
   // Rebuild only the preset selector + temp label inside one form wrapper div,
@@ -1068,9 +1351,12 @@ class CookPredictorCard extends HTMLElement {
       });
     }
 
-    // Start button
+    // Start button.  _refreshForm re-runs this wiring after every category /
+    // cut change while the button itself survives, so guard against stacking
+    // a second click handler (which would send duplicate start_cook calls).
     const startBtn = opts.startId ? this.querySelector(`#${opts.startId}`) : null;
-    if (startBtn) {
+    if (startBtn && !startBtn.dataset.wired) {
+      startBtn.dataset.wired = "1";
       startBtn.addEventListener("click", () => {
         const s = getS();
         const cookName = _makeCookName(s.category, s.cut, s.doneness);
@@ -1170,16 +1456,8 @@ class CookPredictorCard extends HTMLElement {
       ? `<span style="font-size:0.7em;color:var(--secondary-text-color);opacity:0.5;margin-left:5px;vertical-align:middle;">PHY</span>`
       : "";
 
-    // ETA: from eta_entity if configured, else compute from timeRemaining
-    let etaDisplay = "";
-    const etaEntity = this._config.eta_entity;
-    if (etaEntity && this._hass.states[etaEntity]) {
-      const etaState = this._hass.states[etaEntity].state;
-      if (etaState && etaState !== "unavailable" && etaState !== "unknown") {
-        try { etaDisplay = new Date(etaState).toLocaleTimeString(_locale, { hour: "2-digit", minute: "2-digit" }); } catch (e) { /* ignore */ }
-      }
-    }
-    if (!etaDisplay && timeRemaining != null) etaDisplay = etaFromMinutes(timeRemaining);
+    // ETA: now + time remaining (the estimated_completion sensor carries the same value)
+    const etaDisplay = timeRemaining != null ? etaFromMinutes(timeRemaining) : "";
 
     // SVG ring values
     const timerMode = this._timerMode;
@@ -1216,14 +1494,12 @@ class CookPredictorCard extends HTMLElement {
     // In combined mode attrs.current_temp is always probe 1 (the primary),
     // but the time remaining is driven by the slowest probe.  Using only
     // probe 1's temp causes false alerts when probe 1 is almost done but
-    // probes 2/3 are still 10°C away.  We take the minimum across all
+    // the other probes are still 10°C away.  We take the minimum across all
     // active probes so the warning only fires when every probe is near done.
     const pullTemp = attrs.pull_temp ?? null;
-    const probeTemps = [
-      attrs.current_temp,
-      attrs.current_temp_2,
-      attrs.current_temp_3,
-    ].filter(v => v != null);
+    const probeTemps = Array.from({ length: MAX_PROBES }, (_, i) =>
+      attrs[i === 0 ? "current_temp" : `current_temp_${i + 1}`]
+    ).filter(v => v != null);
     const minProbeTemp = probeTemps.length ? Math.min(...probeTemps) : null;
     const shouldPull = pullTemp != null && minProbeTemp != null
       && minProbeTemp >= pullTemp && phase !== "done"
@@ -1384,7 +1660,7 @@ class CookPredictorCard extends HTMLElement {
     // Used to suppress idle setup slots for probes that aren't plugged in.
     const availableSet = new Set(this._availableProbeIndices(probeCount, entityProbeIndex));
 
-    // Gather per-probe data — probes 2/3 use dedicated attrs written by sensor.py
+    // Gather per-probe data — probes 2–4 use dedicated attrs written by sensor.py
     const probeData = [];
     for (let i = 0; i < probeCount; i++) {
       const n = i + 1;
@@ -1419,6 +1695,10 @@ class CookPredictorCard extends HTMLElement {
 
     const ambientTemp = attrs.ambient_temp;
 
+    // Tiles that will render: active probes plus idle ones with a live sensor.
+    const shown = probeData.filter((pd, i) => pd.active || availableSet.has(i)).length;
+    let open = 0;
+
     let probeSlots = "";
     for (let i = 0; i < probeCount; i++) {
       const pd = probeData[i];
@@ -1441,6 +1721,16 @@ class CookPredictorCard extends HTMLElement {
         unreachable: "mdi:fire-alert",
       }[pd.phase] || "mdi:thermometer";
 
+      // Pull-from-heat alert — only meaningful once a prediction is running.
+      const shouldPull = pd.active
+        && pd.phase !== "collecting" && pd.phase !== "done"
+        && pd.pullTemp != null
+        && pd.currentTemp != null
+        && pd.currentTemp >= pd.pullTemp
+        && (pd.timeRemaining == null || pd.timeRemaining <= 10);
+      const expanded = this._isExpanded(i, shown);
+      if (expanded) open++;
+
       let contentBlock = "";
       let actionBlock = "";
 
@@ -1462,16 +1752,13 @@ class CookPredictorCard extends HTMLElement {
             style="width:100%;padding:8px;margin-top:8px;background:var(--primary-color);
                    color:var(--text-primary-color);border:none;border-radius:6px;
                    font-size:0.85em;font-weight:500;cursor:pointer;">
-            ${t("start_probe", { n: i + 1 })}
+            ${t("start_probe", { name: this._probeName(i) })}
           </button>`;
 
       } else if (pd.phase === "collecting") {
         // ── Collecting: two-phase progress ────────────────────────────
         // Phase 1: accumulate 10 readings.
         // Phase 2: wait for the 10-minute data span (30 s/reading assumed).
-        const NEEDED_READINGS = 10;
-        const READING_INTERVAL_S = 30;
-        const REQUIRED_SPAN_S = 600;
         const count = pd.readingsCount;
         const displayCount = Math.min(count, NEEDED_READINGS);
         const readingsDone = count >= NEEDED_READINGS;
@@ -1513,13 +1800,13 @@ class CookPredictorCard extends HTMLElement {
               </div>
             `}
 
-            <div style="display:flex;justify-content:space-between;margin-top:8px;
+            <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:0 8px;margin-top:8px;
                         font-size:0.8em;color:var(--secondary-text-color);">
               ${pd.currentTemp != null
-                ? `<span>${t("internal")}: <strong>${_toDisp(pd.currentTemp, this._tempUnit || "C")}${_unitLabel(this._tempUnit || "C")}</strong></span>`
+                ? `<span style="white-space:nowrap;">${t("internal")}: <strong>${_toDisp(pd.currentTemp, this._tempUnit || "C")}${_unitLabel(this._tempUnit || "C")}</strong></span>`
                 : "<span></span>"}
               ${ambientTemp != null
-                ? `<span>${t("ambient")}: <strong>${_toDisp(ambientTemp, this._tempUnit || "C")}${_unitLabel(this._tempUnit || "C")}</strong></span>`
+                ? `<span style="white-space:nowrap;">${t("ambient")}: <strong>${_toDisp(ambientTemp, this._tempUnit || "C")}${_unitLabel(this._tempUnit || "C")}</strong></span>`
                 : ""}
             </div>
           </div>`;
@@ -1528,7 +1815,7 @@ class CookPredictorCard extends HTMLElement {
             style="width:100%;padding:8px;background:none;color:var(--error-color);
                    border:1px solid var(--error-color);border-radius:6px;
                    font-size:0.8em;cursor:pointer;margin-top:6px;">
-            ${t("cancel_probe", { n: i + 1 })}
+            ${t("cancel_probe", { name: this._probeName(i) })}
           </button>`;
 
       } else if (pd.phase === "done") {
@@ -1549,17 +1836,11 @@ class CookPredictorCard extends HTMLElement {
             style="width:100%;padding:8px;background:var(--primary-color);
                    color:var(--text-primary-color);border:none;border-radius:6px;
                    font-size:0.8em;font-weight:500;cursor:pointer;margin-top:4px;">
-            ${t("new_cook_probe", { n: i + 1 })}
+            ${t("new_cook_probe", { name: this._probeName(i) })}
           </button>`;
 
       } else {
         // ── Active: ring + info rows ───────────────────────────────────
-        const shouldPull = pd.pullTemp != null
-          && pd.currentTemp != null
-          && pd.currentTemp >= pd.pullTemp
-          && pd.phase !== "done"
-          && (pd.timeRemaining == null || pd.timeRemaining <= 10);
-
         // Countdown ring — always shows time remaining in individual mode
         let progress = 0;
         let centerPrimary = "—";
@@ -1616,12 +1897,12 @@ class CookPredictorCard extends HTMLElement {
               </div>
             </div>` : ""}
 
-          <div style="display:flex;justify-content:space-between;margin-top:8px;
+          <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:0 8px;margin-top:8px;
                       font-size:0.78em;color:var(--secondary-text-color);">
-            <span>${pd.ratePerMinute != null
+            <span style="white-space:nowrap;">${pd.ratePerMinute != null
               ? t("rate", { rate: (this._tempUnit === "F" ? pd.ratePerMinute * 9/5 : pd.ratePerMinute).toFixed(2), unit: _unitLabel(this._tempUnit || "C") })
               : ""}</span>
-            <span>${eta ? t("eta", { eta }) : ""}</span>
+            <span style="white-space:nowrap;">${eta ? t("eta", { eta }) : ""}</span>
           </div>
           ${ambientTemp != null ? `
             <div style="font-size:0.78em;color:var(--secondary-text-color);margin-top:2px;">
@@ -1665,7 +1946,7 @@ class CookPredictorCard extends HTMLElement {
             style="width:100%;padding:8px;background:none;color:var(--error-color);
                    border:1px solid var(--error-color);border-radius:6px;
                    font-size:0.8em;cursor:pointer;margin-top:8px;">
-            ${t("stop_probe", { n: i + 1 })}
+            ${t("stop_probe", { name: this._probeName(i) })}
           </button>`;
       }
 
@@ -1678,18 +1959,9 @@ class CookPredictorCard extends HTMLElement {
       const showPhaseDetail = pd.active && pd.phase !== "collecting" && pd.phase !== "done";
       const probePresetName = pd.active ? this._getActivePresetName(i) : null;
 
-      probeSlots += `
-        <div style="border:1px solid var(--divider-color);border-radius:10px;
-                    padding:12px;margin-bottom:10px;">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;">
-            <div style="font-size:0.9em;font-weight:600;
-                        color:${pd.active ? phaseColor : "var(--secondary-text-color)"};">
-              ${t("probe_n", { n: i + 1 })}
-              ${showPhaseDetail
-                ? `<ha-icon icon="${phaseIcon}"
-                     style="--mdc-icon-size:16px;vertical-align:middle;margin-left:4px;"></ha-icon>`
-                : ""}
-            </div>
+      // Header right side while the tile is open — unchanged from the
+      // always-open layout: preset name, target, confidence, model badge.
+      const rightHtml = `
             <div style="font-size:0.75em;color:var(--secondary-text-color);text-align:right;line-height:1.6;">
               ${pd.active
                 ? `${probePresetName
@@ -1699,12 +1971,29 @@ class CookPredictorCard extends HTMLElement {
                      ? `<span style="margin-left:6px;letter-spacing:2px;">${confDots}</span>${indivModelBadge}`
                      : ""}</div>`
                 : `<div>${t("not_started")}</div>`}
-            </div>
-          </div>
-          ${contentBlock}
-          ${actionBlock}
-        </div>`;
+            </div>`;
+
+      // Collapsed rows show an icon for every running state; open tiles keep
+      // the icon only for the prediction phases, as before.
+      const collapsedIcon = !pd.active ? ""
+        : shouldPull ? "mdi:fire-off"
+        : pd.phase === "collecting" ? "mdi:timer-sand"
+        : phaseIcon;
+
+      probeSlots += this._probeTile(i, {
+        expanded,
+        titleColor: shouldPull && !expanded ? "var(--warning-color)"
+          : pd.active ? phaseColor : "var(--secondary-text-color)",
+        icon: expanded ? (showPhaseDetail ? phaseIcon : "") : collapsedIcon,
+        subtitle: pd.active ? (probePresetName || "") : this._idleCookName(i),
+        rightHtml,
+        summary: this._probeSummary(i, pd, shouldPull, phaseColor),
+        alert: shouldPull && !expanded,   // open tiles already show the banner
+        detail: contentBlock + actionBlock,
+      });
     }
+    this._lastTileCount = shown;
+    this._lastOpenCount = open;
 
     this.innerHTML = `
       <ha-card>
@@ -1718,7 +2007,7 @@ class CookPredictorCard extends HTMLElement {
                          background:var(--divider-color);padding:2px 8px;
                          border-radius:10px;">${t("individual_badge")}</span>
           </div>
-          ${probeSlots}
+          ${this._tilesContainer(probeSlots, shown)}
         </div>
       </ha-card>`;
 
@@ -1748,6 +2037,8 @@ class CookPredictorCard extends HTMLElement {
         this._callStart({ target_temp: s.temp, probe_mode: "individual", probe_index: i, cook_name: cookName });
       });
     });
+
+    this._wireTileToggles(shown);
   }
 
   // ── Done ──────────────────────────────────────────────────────────────
@@ -1783,13 +2074,12 @@ class CookPredictorCard extends HTMLElement {
     const temps = [];
 
     if (attrs.current_temp != null) {
-      temps.push({ label: attrs.probe_count > 1 ? t("probe_n", { n: 1 }) : t("internal"), value: attrs.current_temp });
+      temps.push({ label: attrs.probe_count > 1 ? this._probeName(0) : t("internal"), value: attrs.current_temp });
     }
-    if (attrs.current_temp_2 != null) {
-      temps.push({ label: t("probe_n", { n: 2 }), value: attrs.current_temp_2 });
-    }
-    if (attrs.current_temp_3 != null) {
-      temps.push({ label: t("probe_n", { n: 3 }), value: attrs.current_temp_3 });
+    for (let n = 2; n <= MAX_PROBES; n++) {
+      if (attrs[`current_temp_${n}`] != null) {
+        temps.push({ label: this._probeName(n - 1), value: attrs[`current_temp_${n}`] });
+      }
     }
     if (attrs.ambient_temp != null) {
       temps.push({ label: t("ambient"), value: attrs.ambient_temp });
@@ -1806,7 +2096,7 @@ class CookPredictorCard extends HTMLElement {
         </div>`
     ).join("");
 
-    return `<div style="display:flex;justify-content:center;gap:24px;padding:10px 0;">${cells}</div>`;
+    return `<div style="display:flex;flex-wrap:wrap;justify-content:center;gap:8px 24px;padding:10px 0;">${cells}</div>`;
   }
 
   // ── Stop confirmation ─────────────────────────────────────────────────
@@ -1866,7 +2156,14 @@ class CookPredictorCard extends HTMLElement {
   }
 
   getCardSize() {
-    return 5;
+    // Masonry hint (≈50 px rows): header + one row per tile row plus the
+    // detail of each row holding open tiles.  5, as before, for the non-tile views.
+    if (this._lastTileCount == null) return 5;
+    const perRow = this._probeLayout === "horizontal" ? this._lastTileCount
+      : this._probeLayout === "grid" ? 2 : 1;
+    const rows = Math.ceil(this._lastTileCount / Math.max(1, perRow));
+    const openRows = Math.ceil((this._lastOpenCount || 0) / Math.max(1, perRow));
+    return 2 + rows + 4 * openRows;
   }
 
   static getConfigElement() {
@@ -1897,35 +2194,29 @@ function _buildEditorSchema() {
       icon: "mdi:cog", expanded: true,
       schema: [
         { name: "entity",         tkey: "ed_entity",  selector: { entity: {} } },
-        { name: "eta_entity",     tkey: "ed_eta",     selector: { entity: {} } },
         { name: "ambient_sensor", tkey: "ed_ambient", selector: { entity: {} } },
         { name: "entry_id",       tkey: "ed_entry",   selector: { text: {} } },
+        { name: "probe_layout",   tkey: "ed_layout",  selector: { select: {
+            mode: "dropdown",
+            options: [
+              { value: "vertical",   label: t("layout_vertical") },
+              { value: "horizontal", label: t("layout_horizontal") },
+              { value: "grid",       label: t("layout_grid") },
+            ],
+        } } },
+        { name: "collapsible",    tkey: "ed_collapsible", selector: { boolean: {} } },
       ],
     },
-    {
-      type: "expandable", title: t("ed_sec_probe1"),
+    // One section per probe: its target-temp helper and its sensor.
+    ...Array.from({ length: MAX_PROBES }, (_, i) => ({
+      type: "expandable", title: t("probe_n", { n: i + 1 }),
       icon: "mdi:thermometer", expanded: false,
       schema: [
-        { name: "target_temp_entity", tkey: "ed_target_entity", selector: { entity: { domain: "input_number" } } },
-        { name: "probe_sensor_0",     tkey: "ed_probe1",        selector: { entity: {} } },
+        { name: _targetKey(i), tkey: i === 0 ? "ed_target_entity" : "ed_target_entity_n", tvars: { n: i + 1 },
+          selector: { entity: { domain: "input_number" } } },
+        { name: `probe_sensor_${i}`, tkey: "ed_probe_n", tvars: { n: i + 1 }, selector: { entity: {} } },
       ],
-    },
-    {
-      type: "expandable", title: t("ed_sec_probe2"),
-      icon: "mdi:thermometer", expanded: false,
-      schema: [
-        { name: "target_temp_entity_2", tkey: "ed_target_entity_2", selector: { entity: { domain: "input_number" } } },
-        { name: "probe_sensor_1",       tkey: "ed_probe2",          selector: { entity: {} } },
-      ],
-    },
-    {
-      type: "expandable", title: t("ed_sec_probe3"),
-      icon: "mdi:thermometer", expanded: false,
-      schema: [
-        { name: "target_temp_entity_3", tkey: "ed_target_entity_3", selector: { entity: { domain: "input_number" } } },
-        { name: "probe_sensor_2",       tkey: "ed_probe3",          selector: { entity: {} } },
-      ],
-    },
+    })),
   ];
 }
 
@@ -1943,41 +2234,42 @@ class CookPredictorCardEditor extends HTMLElement {
   // Flatten probe_sensors array → individual schema keys
   _toFormData(cfg) {
     const ps = cfg.probe_sensors || [];
-    return {
-      entity:            cfg.entity            || "",
-      eta_entity:        cfg.eta_entity        || "",
-      ambient_sensor:    cfg.ambient_sensor    || "",
-      target_temp_entity:   cfg.target_temp_entity   || "",
-      target_temp_entity_2: cfg.target_temp_entity_2 || "",
-      target_temp_entity_3: cfg.target_temp_entity_3 || "",
-      probe_sensor_0: ps[0]              || "",
-      probe_sensor_1: ps[1]              || "",
-      probe_sensor_2: ps[2]              || "",
+    const data = {
+      entity:         cfg.entity         || "",
+      ambient_sensor: cfg.ambient_sensor || "",
       entry_id:       cfg.entry_id       || "",
+      probe_layout:   cfg.probe_layout   || "",
+      collapsible:    cfg.collapsible !== false,
     };
+    for (let i = 0; i < MAX_PROBES; i++) {
+      data[_targetKey(i)] = cfg[_targetKey(i)] || "";
+      data[`probe_sensor_${i}`] = ps[i] || "";
+    }
+    return data;
   }
 
   // Rebuild card config from flat form data
   _fromFormData(data) {
     // Start from existing config to preserve `type` and any other fields
     const cfg = { ...this._config };
-    if (data.entity)         cfg.entity         = data.entity;
-    else                     delete cfg.entity;
-    if (data.eta_entity)     cfg.eta_entity     = data.eta_entity;
-    else                     delete cfg.eta_entity;
-    if (data.ambient_sensor) cfg.ambient_sensor = data.ambient_sensor;
-    else                     delete cfg.ambient_sensor;
-    if (data.target_temp_entity)   cfg.target_temp_entity   = data.target_temp_entity;
-    else                           delete cfg.target_temp_entity;
-    if (data.target_temp_entity_2) cfg.target_temp_entity_2 = data.target_temp_entity_2;
-    else                           delete cfg.target_temp_entity_2;
-    if (data.target_temp_entity_3) cfg.target_temp_entity_3 = data.target_temp_entity_3;
-    else                           delete cfg.target_temp_entity_3;
-    const probes = [data.probe_sensor_0, data.probe_sensor_1, data.probe_sensor_2].filter(Boolean);
-    if (probes.length)       cfg.probe_sensors  = probes;
-    else                     delete cfg.probe_sensors;
-    if (data.entry_id)       cfg.entry_id       = data.entry_id;
-    else                     delete cfg.entry_id;
+    const setOrDelete = (key, value) => {
+      if (value) cfg[key] = value;
+      else delete cfg[key];
+    };
+    setOrDelete("entity", data.entity);
+    setOrDelete("ambient_sensor", data.ambient_sensor);
+    setOrDelete("entry_id", data.entry_id);
+    setOrDelete("probe_layout", data.probe_layout);
+    // Collapsible is on by default: only persist an explicit "off".
+    if (data.collapsible === false) cfg.collapsible = false;
+    else delete cfg.collapsible;
+    delete cfg.eta_entity;   // retired option — tidy it out of edited configs
+    const probes = [];
+    for (let i = 0; i < MAX_PROBES; i++) {
+      setOrDelete(_targetKey(i), data[_targetKey(i)]);
+      probes.push(data[`probe_sensor_${i}`]);
+    }
+    setOrDelete("probe_sensors", probes.filter(Boolean).length ? probes.filter(Boolean) : null);
     return cfg;
   }
 
@@ -1989,7 +2281,7 @@ class CookPredictorCardEditor extends HTMLElement {
     let form = this.querySelector("ha-form");
     if (!form) {
       form = document.createElement("ha-form");
-      form.computeLabel = (schema) => (schema.tkey ? t(schema.tkey) : schema.label || schema.name);
+      form.computeLabel = (schema) => (schema.tkey ? t(schema.tkey, schema.tvars) : schema.label || schema.name);
       form.addEventListener("value-changed", (e) => {
         this._config = this._fromFormData(e.detail.value);
         this.dispatchEvent(new CustomEvent("config-changed", {

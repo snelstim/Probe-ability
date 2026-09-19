@@ -264,12 +264,18 @@ def is_silent(prev: PushRecord | None, new: PushRecord) -> bool:
     return True
 
 
-def activity_title(cook_name: str, probe_index: int | None = None) -> str:
-    """Static title: the cook name (or a fallback), plus the probe in individual mode."""
+def activity_title(cook_name: str, probe_label: str | None = None) -> str:
+    """Static title: the cook name (or a fallback), plus the probe label in individual mode."""
     title = cook_name if cook_name and cook_name != DEFAULT_COOK_NAME else FALLBACK_TITLE
-    if probe_index is not None:
-        title += f" · Probe {probe_index + 1}"
+    if probe_label:
+        title += f" · {probe_label}"
     return title
+
+
+def _probe_label(monitor, index: int) -> str:
+    """The monitor's display name for a probe ("Green" or "Probe N")."""
+    fn = getattr(monitor, "probe_label", None)
+    return fn(index) if callable(fn) else f"Probe {index + 1}"
 
 
 # ── Manager ──────────────────────────────────────────────────────────────────
@@ -387,7 +393,8 @@ class LiveActivityManager:
                 states[tag] = SlotState(
                     tag=tag,
                     title=activity_title(
-                        monitor.probe_name[i], i if len(predictors) > 1 else None
+                        monitor.probe_name[i],
+                        _probe_label(monitor, i) if len(predictors) > 1 else None,
                     ),
                     phase=result.phase,
                     confidence=result.confidence,

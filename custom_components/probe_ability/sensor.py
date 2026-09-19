@@ -13,7 +13,7 @@ from homeassistant.const import UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONF_INTERNAL_SENSOR_2, CONF_INTERNAL_SENSOR_3, CONF_TEMP_UNIT, DOMAIN, PROBE_MODE_COMBINED, TEMP_UNIT_CELSIUS
+from .const import CONF_TEMP_UNIT, DOMAIN, PROBE_MODE_COMBINED, TEMP_UNIT_CELSIUS
 from .predictor import pull_temp as _pull_temp
 
 
@@ -37,11 +37,11 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-# Suffix used in unique_id for probes 1 and 2 (probe 0 has no suffix)
-_PROBE_SUFFIX = {0: "", 1: "_2", 2: "_3"}
+# unique_id suffix per probe index (probe 0 has no suffix)
+_PROBE_SUFFIX = {0: "", 1: "_2", 2: "_3", 3: "_4"}
 # Suffix appended to the entity translation_key so each probe gets its own
 # localised name (see the "entity" section of strings.json / translations).
-_PROBE_KEY_SUFFIX = {0: "", 1: "_probe2", 2: "_probe3"}
+_PROBE_KEY_SUFFIX = {0: "", 1: "_probe2", 2: "_probe3", 3: "_probe4"}
 
 # Pull temperature (carryover-adjusted) lives in predictor.py — HA-free, unit-tested.
 
@@ -159,6 +159,8 @@ class CookTimeRemainingSensor(CookPredictorSensorBase):
             "probe_mode": self._monitor.probe_mode,
             "probe_count": len(predictors),
             "probe_active": list(self._monitor.probe_active),
+            # Configured display names ("Green" …), None where unnamed
+            "probe_names": list(self._monitor.probe_labels),
         }
 
         if idx == 0:
@@ -220,7 +222,7 @@ class CookTimeRemainingSensor(CookPredictorSensorBase):
         # the card can render all probe slots regardless of probe 0's own state.
         if idx == 0:
             for extra_i in range(1, len(predictors)):
-                n = extra_i + 1  # human-readable probe number (2 or 3)
+                n = extra_i + 1  # human-readable probe number (2–4)
                 extra_pred = predictors[extra_i]
                 extra_active = self._monitor.probe_active[extra_i]
 

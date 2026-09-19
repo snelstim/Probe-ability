@@ -22,6 +22,7 @@ from homeassistant.helpers.selector import (
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
+    TextSelector,
 )
 
 from .const import (
@@ -30,7 +31,12 @@ from .const import (
     CONF_INTERNAL_SENSOR,
     CONF_INTERNAL_SENSOR_2,
     CONF_INTERNAL_SENSOR_3,
+    CONF_INTERNAL_SENSOR_4,
     CONF_LIVE_ACTIVITY_TARGETS,
+    CONF_PROBE_NAME,
+    CONF_PROBE_NAME_2,
+    CONF_PROBE_NAME_3,
+    CONF_PROBE_NAME_4,
     CONF_SHARE_DATA,
     CONF_TEMP_UNIT,
     DOMAIN,
@@ -44,15 +50,22 @@ SETUP_SCHEMA = vol.Schema(
         vol.Required(CONF_INTERNAL_SENSOR): EntitySelector(
             EntitySelectorConfig(domain="sensor", device_class="temperature")
         ),
+        vol.Optional(CONF_PROBE_NAME): TextSelector(),
         vol.Required(CONF_AMBIENT_SENSOR): EntitySelector(
             EntitySelectorConfig(domain="sensor", device_class="temperature")
         ),
         vol.Optional(CONF_INTERNAL_SENSOR_2): EntitySelector(
             EntitySelectorConfig(domain="sensor", device_class="temperature")
         ),
+        vol.Optional(CONF_PROBE_NAME_2): TextSelector(),
         vol.Optional(CONF_INTERNAL_SENSOR_3): EntitySelector(
             EntitySelectorConfig(domain="sensor", device_class="temperature")
         ),
+        vol.Optional(CONF_PROBE_NAME_3): TextSelector(),
+        vol.Optional(CONF_INTERNAL_SENSOR_4): EntitySelector(
+            EntitySelectorConfig(domain="sensor", device_class="temperature")
+        ),
+        vol.Optional(CONF_PROBE_NAME_4): TextSelector(),
         vol.Optional(CONF_TEMP_UNIT, default=TEMP_UNIT_CELSIUS): SelectSelector(
             SelectSelectorConfig(
                 options=[TEMP_UNIT_CELSIUS, TEMP_UNIT_FAHRENHEIT],

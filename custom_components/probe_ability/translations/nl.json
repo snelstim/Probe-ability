@@ -9,6 +9,11 @@
           "ambient_sensor": "Omgevingstemperatuur (oven/smoker)",
           "internal_sensor_2": "Kerntemperatuur — probe 2 (optioneel)",
           "internal_sensor_3": "Kerntemperatuur — probe 3 (optioneel)",
+          "internal_sensor_4": "Kerntemperatuur — probe 4 (optioneel)",
+          "probe_name": "Naam probe 1 (optioneel, bv. Groen)",
+          "probe_name_2": "Naam probe 2 (optioneel)",
+          "probe_name_3": "Naam probe 3 (optioneel)",
+          "probe_name_4": "Naam probe 4 (optioneel)",
           "temp_unit": "Temperatuureenheid",
           "export_cook_data": "Kookgegevens lokaal exporteren (voor hertrainen)",
           "share_cook_data": "Geanonimiseerde kookgegevens delen om het model te verbeteren"
@@ -22,6 +27,11 @@
           "ambient_sensor": "Omgevingstemperatuur (oven/smoker)",
           "internal_sensor_2": "Kerntemperatuur — probe 2 (optioneel)",
           "internal_sensor_3": "Kerntemperatuur — probe 3 (optioneel)",
+          "internal_sensor_4": "Kerntemperatuur — probe 4 (optioneel)",
+          "probe_name": "Naam probe 1 (optioneel, bv. Groen)",
+          "probe_name_2": "Naam probe 2 (optioneel)",
+          "probe_name_3": "Naam probe 3 (optioneel)",
+          "probe_name_4": "Naam probe 4 (optioneel)",
           "temp_unit": "Temperatuureenheid",
           "export_cook_data": "Kookgegevens lokaal exporteren (voor hertrainen)",
           "share_cook_data": "Geanonimiseerde kookgegevens delen om het model te verbeteren"
@@ -60,9 +70,11 @@
       "time_remaining": { "name": "Resterende tijd" },
       "time_remaining_probe2": { "name": "Resterende tijd (probe 2)" },
       "time_remaining_probe3": { "name": "Resterende tijd (probe 3)" },
+      "time_remaining_probe4": { "name": "Resterende tijd (probe 4)" },
       "estimated_completion": { "name": "Geschatte voltooiing" },
       "estimated_completion_probe2": { "name": "Geschatte voltooiing (probe 2)" },
-      "estimated_completion_probe3": { "name": "Geschatte voltooiing (probe 3)" }
+      "estimated_completion_probe3": { "name": "Geschatte voltooiing (probe 3)" },
+      "estimated_completion_probe4": { "name": "Geschatte voltooiing (probe 4)" }
     }
   },
   "services": {
@@ -84,7 +96,7 @@
         },
         "probe_index": {
           "name": "Probe-index",
-          "description": "Welke probe te starten (0, 1 of 2). Alleen gebruikt in de individuele modus."
+          "description": "Welke probe te starten (0–3). Alleen gebruikt in de individuele modus."
         }
       }
     },
@@ -98,7 +110,7 @@
         },
         "probe_index": {
           "name": "Probe-index",
-          "description": "Welke probe te stoppen (0, 1 of 2). Laat leeg om alle probes te stoppen."
+          "description": "Welke probe te stoppen (0–3). Laat leeg om alle probes te stoppen."
         }
       }
     },
@@ -116,7 +128,7 @@
         },
         "probe_index": {
           "name": "Probe-index",
-          "description": "Welke probe bij te werken (0, 1 of 2). Laat leeg om alle probes bij te werken."
+          "description": "Welke probe bij te werken (0–3). Laat leeg om alle probes bij te werken."
         }
       }
     }
@@ -126,7 +138,7 @@
       "message": "Kan kook niet starten: omgevingssensor is niet beschikbaar"
     },
     "probe_unavailable": {
-      "message": "Kan kook niet starten: sensor van probe {probe} ({sensor_id}) is niet beschikbaar"
+      "message": "Kan kook niet starten: sensor van {probe} ({sensor_id}) is niet beschikbaar"
     },
     "no_probes_available": {
       "message": "Kan kook niet starten: er zijn momenteel geen probe-sensoren beschikbaar"

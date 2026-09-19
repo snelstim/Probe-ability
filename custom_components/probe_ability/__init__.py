@@ -29,9 +29,6 @@ from .const import (
     AUTO_STOP_DELAY,
     CONF_AMBIENT_SENSOR,
     CONF_EXPORT_DATA,
-    CONF_INTERNAL_SENSOR,
-    CONF_INTERNAL_SENSOR_2,
-    CONF_INTERNAL_SENSOR_3,
     CONF_LIVE_ACTIVITY_TARGETS,
     CONF_SHARE_DATA,
     CONF_TEMP_UNIT,
@@ -39,9 +36,12 @@ from .const import (
     DEFAULT_TARGET_TEMP,
     DOMAIN,
     EXPORT_SUBDIR,
+    MAX_PROBES,
     MIN_READING_INTERVAL,
     PROBE_MODE_COMBINED,
     PROBE_MODE_INDIVIDUAL,
+    PROBE_NAME_KEYS,
+    PROBE_SENSOR_KEYS,
     SERVICE_SET_TARGET,
     SERVICE_START_COOK,
     SERVICE_STOP_COOK,
@@ -196,7 +196,7 @@ def _register_services(hass: HomeAssistant) -> None:
                 ),
                 vol.Optional(ATTR_COOK_NAME, default=DEFAULT_COOK_NAME): cv.string,
                 vol.Optional("probe_index"): vol.All(
-                    vol.Coerce(int), vol.Range(min=0, max=2)
+                    vol.Coerce(int), vol.Range(min=0, max=MAX_PROBES - 1)
                 ),
                 vol.Optional("probe_mode", default=PROBE_MODE_COMBINED): vol.In(
                     [PROBE_MODE_INDIVIDUAL, PROBE_MODE_COMBINED]
@@ -213,7 +213,7 @@ def _register_services(hass: HomeAssistant) -> None:
             {
                 vol.Optional("entry_id"): cv.string,
                 vol.Optional("probe_index"): vol.All(
-                    vol.Coerce(int), vol.Range(min=0, max=2)
+                    vol.Coerce(int), vol.Range(min=0, max=MAX_PROBES - 1)
                 ),
             }
         ),
@@ -228,7 +228,7 @@ def _register_services(hass: HomeAssistant) -> None:
                 vol.Optional("entry_id"): cv.string,
                 vol.Required(ATTR_TARGET_TEMP): vol.Coerce(float),
                 vol.Optional("probe_index"): vol.All(
-                    vol.Coerce(int), vol.Range(min=0, max=2)
+                    vol.Coerce(int), vol.Range(min=0, max=MAX_PROBES - 1)
                 ),
             }
         ),
@@ -238,7 +238,7 @@ def _register_services(hass: HomeAssistant) -> None:
 class CookMonitor:
     """Bridges HA sensor entities to the CookPredictor engine.
 
-    Supports 1–3 internal temperature probes and two usage modes:
+    Supports 1–4 internal temperature probes and two usage modes:
       - combined:    all probes track the same cook (e.g. brisket with probes
                      in different spots), sharing a single target temperature.
       - individual:  each probe is independent (e.g. 3 steaks at different
@@ -252,7 +252,7 @@ class CookMonitor:
         # Determine how many probes are wired up in this config entry
         probe_count = self._probe_count()
 
-        # Per-probe state (lists indexed 0–2)
+        # Per-probe state (one entry per configured probe)
         self.predictors: list[CookPredictor] = [
             CookPredictor(target_temp=DEFAULT_TARGET_TEMP)
             for _ in range(probe_count)
@@ -304,21 +304,39 @@ class CookMonitor:
 
     def _probe_count(self) -> int:
         """Number of internal probes configured for this entry."""
-        count = 1
-        if self.entry.data.get(CONF_INTERNAL_SENSOR_2):
-            count += 1
-        if self.entry.data.get(CONF_INTERNAL_SENSOR_3):
-            count += 1
-        return count
+        return len(self._probe_sensors())
 
     def _probe_sensors(self) -> list[str]:
-        """Return entity_ids for all configured internal sensors."""
-        sensors = [self.entry.data[CONF_INTERNAL_SENSOR]]
-        if s2 := self.entry.data.get(CONF_INTERNAL_SENSOR_2):
-            sensors.append(s2)
-        if s3 := self.entry.data.get(CONF_INTERNAL_SENSOR_3):
-            sensors.append(s3)
-        return sensors
+        """Return entity_ids for all configured internal sensors, in probe order.
+
+        A probe's index is its position among the sensor keys that are set,
+        so leaving probe 2 empty but filling probe 3 still yields two probes.
+        """
+        return [
+            self.entry.data[key]
+            for key in PROBE_SENSOR_KEYS
+            if self.entry.data.get(key)
+        ]
+
+    @property
+    def probe_labels(self) -> list[str | None]:
+        """User-given probe names ("Green" …) aligned with _probe_sensors().
+
+        None for a probe that has no name; the card then shows its localised
+        "Probe N".
+        """
+        return [
+            (self.entry.data.get(name_key) or "").strip() or None
+            for sensor_key, name_key in zip(PROBE_SENSOR_KEYS, PROBE_NAME_KEYS)
+            if self.entry.data.get(sensor_key)
+        ]
+
+    def probe_label(self, index: int) -> str:
+        """Display name for probe `index`: its configured name, else "Probe N"."""
+        labels = self.probe_labels
+        if index < len(labels) and labels[index]:
+            return labels[index]
+        return f"Probe {index + 1}"
 
     def _sensor_recently_valid(self, state) -> bool:
         """True if the sensor transitioned to its current (bad) state recently.
@@ -422,11 +440,11 @@ class CookMonitor:
             return
         if not all(self._probe_disconnected_since[i] is not None for i in active_indices):
             return
-        probe_labels = ", ".join(f"probe {i + 1}" for i in active_indices)
+        labels = ", ".join(self.probe_label(i) for i in active_indices)
         _LOGGER.warning(
             "Auto-stopping cook '%s' — all probes (%s) have been disconnected",
             self.cook_name,
-            probe_labels,
+            labels,
         )
         self.hass.async_create_task(
             self.hass.services.async_call(
@@ -436,7 +454,7 @@ class CookMonitor:
                     "title": "BBQ Cook Auto-Stopped",
                     "message": (
                         f"Cook \"{self.cook_name}\" was automatically stopped because "
-                        f"all probes ({probe_labels}) have been disconnected."
+                        f"all probes ({labels}) have been disconnected."
                     ),
                     "notification_id": f"probe_ability_auto_stop_{self.entry.entry_id}",
                 },
@@ -465,7 +483,16 @@ class CookMonitor:
                 self.probe_active = [p.get("active", False) for p in probes]
                 self.probe_target = [p.get("target", DEFAULT_TARGET_TEMP) for p in probes]
                 self.probe_name = [p.get("name", DEFAULT_COOK_NAME) for p in probes]
+                # Guard against a grown config (a probe added while a cook was
+                # active): pad the per-probe lists so every configured probe
+                # gets its entities and can still be started.
+                for _ in range(probe_count - len(probes)):
+                    self.predictors.append(CookPredictor(target_temp=DEFAULT_TARGET_TEMP))
+                    self.probe_active.append(False)
+                    self.probe_target.append(DEFAULT_TARGET_TEMP)
+                    self.probe_name.append(DEFAULT_COOK_NAME)
                 self._last_reading_ts = [0.0] * len(self.predictors)
+                self._probe_disconnected_since = [None] * len(self.predictors)
 
             # Legacy format: single predictor (v1 saves)
             elif "predictor" in data:
@@ -541,7 +568,7 @@ class CookMonitor:
                     translation_domain=DOMAIN,
                     translation_key="probe_unavailable",
                     translation_placeholders={
-                        "probe": str(probe_index + 1),
+                        "probe": self.probe_label(probe_index),
                         "sensor_id": sensor_id,
                     },
                 )
@@ -584,7 +611,7 @@ class CookMonitor:
         """Stop a cook.
 
         probe_index=None: stop all probes.
-        probe_index=0/1/2: stop only that probe (individual mode).
+        probe_index=i: stop only probe i (individual mode).
         """
         if self._auto_stop_unsub is not None:
             self._auto_stop_unsub()

@@ -160,7 +160,8 @@ check("gen at 7h51m", activity_generation(0.0, 7 * 3600 + 51 * 60) == 1)
 check("gen at 16h", activity_generation(0.0, 16 * 3600) == 2)
 check("gen no readings", activity_generation(None, 1e9) == 0)
 check("title default name", activity_title("Cook") == "Probe-ability")
-check("title with probe", activity_title("Cook", 1) == "Probe-ability · Probe 2")
+check("title with probe", activity_title("Cook", "Probe 2") == "Probe-ability · Probe 2")
+check("title named probe", activity_title("Cook", "Green") == "Probe-ability · Green")
 check("title cook name", activity_title("Beef Brisket", None) == "Beef Brisket")
 
 # ── 6. End-to-end: simulated cook through a real CookPredictor ──────────────

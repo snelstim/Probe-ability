@@ -76,6 +76,8 @@ The config flow is a one-time hardware setup. It does **not** ask for target tem
 | **Ambient sensor** | Yes | Ambient (oven/smoker/air) temperature sensor |
 | **Probe 2 sensor** | No | Second internal probe (optional) |
 | **Probe 3 sensor** | No | Third internal probe (optional) |
+| **Probe 4 sensor** | No | Fourth internal probe (optional) |
+| **Probe 1–4 name** | No | Optional display name for each probe, e.g. *Green* or *Red* for colour-coded probes. Shown on the card (tiles, buttons, temperature row), in Live Activities and in the auto-stop notification instead of "Probe N". Change any time via **⋮ → Reconfigure**. |
 | **Temperature unit** | No | Display unit for the card — Celsius (default) or Fahrenheit |
 | **Export cook data** | No | Save a CSV after every cook for local analysis/fine-tuning |
 | **Share anonymous cook data** | No | Opt-in: send completed cooks to improve the shared ML model (see [Anonymous data sharing](#anonymous-data-sharing)) |
@@ -101,23 +103,21 @@ entity: sensor.probe_ability_time_remaining
 | Option | Required | Description |
 |---|---|---|
 | `entity` | **Yes** | The primary `time_remaining` sensor entity ID |
-| `eta_entity` | No | The `estimated_completion` sensor entity ID. If omitted the ETA is computed client-side from the time remaining value. In practice both give identical results — leave empty. |
 | `entry_id` | No | Config entry ID, only needed when you have **multiple instances** of the integration installed. See [Multiple instances](#multiple-instances) |
 | `probe_sensors` | No | List of internal probe sensor entity IDs; enables per-probe availability checking in the card UI. See [Probe availability](#probe-availability). |
 | `ambient_sensor` | No | Ambient (oven/smoker) sensor entity ID. If set, the card blocks starting a cook until this sensor is available and returning a valid reading. The ambient temperature displayed in the card comes from the backend sensor attributes regardless of this setting. |
 | `target_temp_entity` | No | An `input_number` entity to link the card's target temperature to (probe 1 / combined mode). The card uses its value as the default target and writes changes back to it, so the card and a history-graph target line stay in sync — including **before** a cook starts. See [Linking the target temperature](#linking-the-target-temperature). |
 | `target_temp_entity_2` | No | Target-temp `input_number` for **probe 2** (individual mode). |
 | `target_temp_entity_3` | No | Target-temp `input_number` for **probe 3** (individual mode). |
+| `target_temp_entity_4` | No | Target-temp `input_number` for **probe 4** (individual mode). |
+| `probe_layout` | No | How individual-mode probe tiles are arranged: `vertical` (default), `horizontal` or `grid`. See [Probe tile layout](#probe-tile-layout). |
+| `collapsible` | No | `true` (default) gives every probe tile a summary header that folds the tile open or closed; `false` keeps all tiles open. See [Probe tile layout](#probe-tile-layout). |
 
 #### How each option works in detail
 
 **`entity` — the main data source**
 
 This sensor's **attributes** provide everything the card displays: current temperature, target temperature, heating rate, stall detection, ambient temperature, and prediction model. Only the `time_remaining` sensors created by Probe-ability are valid here. In a multi-probe individual-mode setup, each probe has its own sensor (`sensor.probe_ability_time_remaining_probe_1`, etc.) with its own independent attribute set — pick the one for the probe you want as the primary display.
-
-**`eta_entity` — optional, redundant in practice**
-
-The card auto-computes the estimated completion time as `now + time_remaining_seconds`. If `eta_entity` is configured the card reads the datetime from that HA sensor instead. Both paths give the same result. Only set this if you need the ETA display to be driven by a specific HA sensor entity for automation or consistency reasons.
 
 **`ambient_sensor` — a readiness guard, not a data source**
 
@@ -142,7 +142,7 @@ Set `target_temp_entity` to that `input_number` to make it the single source of 
 
 **Multiple probes.** Each probe has its own target, so each has its own optional helper:
 `target_temp_entity` covers probe 1 (and combined mode, where all probes share one target),
-while `target_temp_entity_2` and `target_temp_entity_3` cover probes 2 and 3 in individual mode.
+while `target_temp_entity_2` to `target_temp_entity_4` cover probes 2–4 in individual mode.
 Leave any of them empty to leave that probe unlinked. A single-probe setup only needs
 `target_temp_entity`.
 
@@ -158,19 +158,20 @@ type: custom:probe-ability-card
 entity: sensor.probe_ability_time_remaining
 ```
 
-### Full example (3 probes, multi-instance)
+### Full example (4 probes, multi-instance)
 
 ```yaml
 type: custom:probe-ability-card
 entity: sensor.probe_ability_time_remaining
-eta_entity: sensor.probe_ability_estimated_completion
 entry_id: abc123def456
 ambient_sensor: sensor.smoker_ambient_temperature
 target_temp_entity: input_number.cook_target_temperature
+probe_layout: grid
 probe_sensors:
   - sensor.probe_1_temperature
   - sensor.probe_2_temperature
   - sensor.probe_3_temperature
+  - sensor.probe_4_temperature
 ```
 
 ---
@@ -209,6 +210,28 @@ Once enough data is collected:
 
 When the target temperature is reached the card shows a completion screen. Press **New Cook** to reset and start again.
 
+### Naming probes
+
+Probes are called *Probe 1*, *Probe 2*, … by default. Many thermometers colour-code their probes, so you can give each one a name (e.g. *Green*) in **Settings → Devices & services → Probe-ability → ⋮ → Reconfigure**. The names replace "Probe N" everywhere: card tiles and buttons ("Start Green", "Stop Green"), the combined-mode temperature row, Live Activity titles and the auto-stop notification.
+
+### Probe tile layout
+
+In individual mode every probe gets its own tile. Two options (visual editor → **General**, or YAML) control how the tiles are arranged and whether they fold up:
+
+| Option | Values | What it does |
+|---|---|---|
+| `probe_layout` | `vertical` (default), `horizontal`, `grid` | **vertical** stacks the tiles. **horizontal** puts all probes in one row — 2 probes sit side by side on any card, while 3 or 4 need a wider card (make the card span 2–3 dashboard columns) and wrap onto extra rows until then. **grid** uses 2 columns, so 4 probes form a 2×2 block. Every tile needs about 150 px of width; below that a column is dropped rather than squeezing the tiles. |
+| `collapsible` | `true` (default), `false` | With `true` each tile has a summary header — phase icon, preset, time remaining, current → target temperature and a thin progress bar — that you tap to open or close the full tile (ring, rate, ETA, buttons). With 1 or 2 probes tiles start open; with 3 or 4 they start closed. A pull-from-heat alert is shown on the closed row as well, and your open/closed choices are remembered per probe in the browser. With `false` every tile is always fully open. |
+
+```yaml
+type: custom:probe-ability-card
+entity: sensor.probe_ability_time_remaining
+probe_layout: horizontal   # two steaks side by side
+collapsible: false
+```
+
+Combined mode is unaffected — it always shows a single tile.
+
 ### Probe availability
 
 If `probe_sensors` is configured in the card YAML, the card checks sensor availability in real time before showing the idle form:
@@ -217,7 +240,7 @@ If `probe_sensors` is configured in the card YAML, the card checks sensor availa
 |---|---|
 | **0** | Warning message : no start button |
 | **1** | Single form, no combined/individual toggle |
-| **2–3** | Full UI with mode toggle; only available probe slots shown in individual mode |
+| **2–4** | Full UI with mode toggle; only available probe slots shown in individual mode |
 
 Without `probe_sensors` configured the card assumes all probes are available and relies on the backend to raise an error if a probe is actually offline when you press Start. In that case a red notification toast appears in the HA frontend automatically.
 
@@ -227,16 +250,16 @@ Without `probe_sensors` configured the card assumes all probes are available and
 
 One pair of entities is created per configured probe:
 
-| Entity | Probe 1 | Probe 2 | Probe 3 |
-|---|---|---|---|
-| **Time remaining** | `sensor.probe_ability_time_remaining` | `sensor.probe_ability_time_remaining_2` | `sensor.probe_ability_time_remaining_3` |
-| **Estimated completion** | `sensor.probe_ability_estimated_completion` | `sensor.probe_ability_estimated_completion_2` | `sensor.probe_ability_estimated_completion_3` |
+| Entity | Probe 1 | Probe 2 | Probe 3 | Probe 4 |
+|---|---|---|---|---|
+| **Time remaining** | `sensor.probe_ability_time_remaining` | `sensor.probe_ability_time_remaining_probe_2` | `sensor.probe_ability_time_remaining_probe_3` | `sensor.probe_ability_time_remaining_probe_4` |
+| **Estimated completion** | `sensor.probe_ability_estimated_completion` | `sensor.probe_ability_estimated_completion_probe_2` | `sensor.probe_ability_estimated_completion_probe_3` | `sensor.probe_ability_estimated_completion_probe_4` |
 
 Entities are **unavailable** while idle or collecting (not enough data yet).
 
 ### Sensor attributes
 
-The primary `time_remaining` sensor (probe 1) exposes all attributes the card needs, including cross-probe data for probes 2 and 3:
+The primary `time_remaining` sensor (probe 1) exposes all attributes the card needs, including cross-probe data for probes 2–4:
 
 **Always present when active:**
 
@@ -244,8 +267,9 @@ The primary `time_remaining` sensor (probe 1) exposes all attributes the card ne
 |---|---|---|
 | `active` | bool | True if any probe is currently running |
 | `probe_mode` | string | `"combined"` or `"individual"` |
-| `probe_count` | int | Number of probes configured (1–3) |
+| `probe_count` | int | Number of probes configured (1–4) |
 | `probe_active` | list[bool] | Per-probe active state |
+| `probe_names` | list[str \| null] | Configured display name per probe (`null` where unnamed) |
 
 **Present when probe 1 is active:**
 
@@ -263,18 +287,18 @@ The primary `time_remaining` sensor (probe 1) exposes all attributes the card ne
 | `rest_peak` | float | Highest internal temperature reached while resting (present only after a pull) |
 | `message` | string | Human-readable status message (during stall etc.) |
 
-**Cross-probe attributes (when probes 2/3 are configured and active):**
+**Cross-probe attributes (when probes 2–4 are configured and active; `N` is the probe number, 2–4):**
 
 | Attribute | Description |
 |---|---|
-| `current_temp_2` / `current_temp_3` | Current internal temp for probe 2/3 |
-| `target_temp_2` / `target_temp_3` | Target temp for probe 2/3 |
-| `probe_2_active` / `probe_3_active` | Whether that probe is running |
-| `probe_2_phase` / `probe_3_phase` | Cook phase for probe 2/3 |
-| `probe_2_confidence` / `probe_3_confidence` | Confidence for probe 2/3 |
-| `probe_2_time_remaining` / `probe_3_time_remaining` | Minutes remaining for probe 2/3 |
-| `probe_2_pull_temp` / `probe_3_pull_temp` | Pull temperature for probe 2/3 |
-| `probe_2_rate_c_per_minute` / `probe_3_rate_c_per_minute` | Heating rate for probe 2/3 |
+| `current_temp_N` | Current internal temp for probe N |
+| `target_temp_N` | Target temp for probe N |
+| `probe_N_active` | Whether that probe is running |
+| `probe_N_phase` | Cook phase for probe N |
+| `probe_N_confidence` | Confidence for probe N |
+| `probe_N_time_remaining` | Minutes remaining for probe N |
+| `probe_N_pull_temp` | Pull temperature for probe N |
+| `probe_N_rate_c_per_minute` | Heating rate for probe N |
 
 ---
 
@@ -289,7 +313,7 @@ Start a new cook. If a sensor is unavailable when this is called, a red error no
 | `target_temp` | No | 74 | Target internal temperature in °C |
 | `cook_name` | No | `"Cook"` | Name label for this cook ; also used by the ML model to select the correct meat type profile |
 | `probe_mode` | No | `"combined"` | `"combined"` or `"individual"` |
-| `probe_index` | No | — | Which probe to start (0–2). Only used in individual mode |
+| `probe_index` | No | — | Which probe to start (0–3). Only used in individual mode |
 | `entry_id` | No | — | Target a specific integration instance (see below) |
 
 **Combined mode** : omit `probe_index`. All configured probes with available sensors are started together.
@@ -311,7 +335,7 @@ Stop a cook and clear data.
 
 | Parameter | Required | Default | Description |
 |---|---|---|---|
-| `probe_index` | No | — | Stop only this probe (0–2). Omit to stop all probes |
+| `probe_index` | No | — | Stop only this probe (0–3). Omit to stop all probes |
 | `entry_id` | No | — | Target a specific integration instance |
 
 ### `probe_ability.set_target`
@@ -321,7 +345,7 @@ Change the target temperature mid-cook without interrupting data collection.
 | Parameter | Required | Default | Description |
 |---|---|---|---|
 | `target_temp` | **Yes** | — | New target temperature in °C |
-| `probe_index` | No | — | Update only this probe (0–2). Omit to update all |
+| `probe_index` | No | — | Update only this probe (0–3). Omit to update all |
 | `entry_id` | No | — | Target a specific integration instance |
 
 ---

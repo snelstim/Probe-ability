@@ -9,6 +9,11 @@
           "ambient_sensor": "Ambient (oven/smoker) temperature",
           "internal_sensor_2": "Internal temperature — probe 2 (optional)",
           "internal_sensor_3": "Internal temperature — probe 3 (optional)",
+          "internal_sensor_4": "Internal temperature — probe 4 (optional)",
+          "probe_name": "Probe 1 name (optional, e.g. Green)",
+          "probe_name_2": "Probe 2 name (optional)",
+          "probe_name_3": "Probe 3 name (optional)",
+          "probe_name_4": "Probe 4 name (optional)",
           "temp_unit": "Temperature unit",
           "export_cook_data": "Export cook data locally (for retraining)",
           "share_cook_data": "Share anonymised cook data to improve the model"
@@ -22,6 +27,11 @@
           "ambient_sensor": "Ambient (oven/smoker) temperature",
           "internal_sensor_2": "Internal temperature — probe 2 (optional)",
           "internal_sensor_3": "Internal temperature — probe 3 (optional)",
+          "internal_sensor_4": "Internal temperature — probe 4 (optional)",
+          "probe_name": "Probe 1 name (optional, e.g. Green)",
+          "probe_name_2": "Probe 2 name (optional)",
+          "probe_name_3": "Probe 3 name (optional)",
+          "probe_name_4": "Probe 4 name (optional)",
           "temp_unit": "Temperature unit",
           "export_cook_data": "Export cook data locally (for retraining)",
           "share_cook_data": "Share anonymised cook data to improve the model"
@@ -60,9 +70,11 @@
       "time_remaining": { "name": "Time remaining" },
       "time_remaining_probe2": { "name": "Time remaining (probe 2)" },
       "time_remaining_probe3": { "name": "Time remaining (probe 3)" },
+      "time_remaining_probe4": { "name": "Time remaining (probe 4)" },
       "estimated_completion": { "name": "Estimated completion" },
       "estimated_completion_probe2": { "name": "Estimated completion (probe 2)" },
-      "estimated_completion_probe3": { "name": "Estimated completion (probe 3)" }
+      "estimated_completion_probe3": { "name": "Estimated completion (probe 3)" },
+      "estimated_completion_probe4": { "name": "Estimated completion (probe 4)" }
     }
   },
   "services": {
@@ -84,7 +96,7 @@
         },
         "probe_index": {
           "name": "Probe index",
-          "description": "Which probe to start (0, 1, or 2). Only used in individual mode."
+          "description": "Which probe to start (0–3). Only used in individual mode."
         }
       }
     },
@@ -98,7 +110,7 @@
         },
         "probe_index": {
           "name": "Probe index",
-          "description": "Which probe to stop (0, 1, or 2). Omit to stop all probes."
+          "description": "Which probe to stop (0–3). Omit to stop all probes."
         }
       }
     },
@@ -116,7 +128,7 @@
         },
         "probe_index": {
           "name": "Probe index",
-          "description": "Which probe to update (0, 1, or 2). Omit to update all probes."
+          "description": "Which probe to update (0–3). Omit to update all probes."
         }
       }
     }
@@ -126,7 +138,7 @@
       "message": "Cannot start cook: ambient sensor is not available"
     },
     "probe_unavailable": {
-      "message": "Cannot start cook: probe {probe} sensor ({sensor_id}) is not available"
+      "message": "Cannot start cook: {probe} sensor ({sensor_id}) is not available"
     },
     "no_probes_available": {
       "message": "Cannot start cook: no probe sensors are currently available"

@@ -5,7 +5,31 @@ DOMAIN = "probe_ability"
 CONF_INTERNAL_SENSOR = "internal_sensor"
 CONF_INTERNAL_SENSOR_2 = "internal_sensor_2"
 CONF_INTERNAL_SENSOR_3 = "internal_sensor_3"
+CONF_INTERNAL_SENSOR_4 = "internal_sensor_4"
 CONF_AMBIENT_SENSOR = "ambient_sensor"
+
+# Internal-probe config keys in probe order.  The first is required, the rest
+# are optional; a probe's index is its position among the keys that are set.
+PROBE_SENSOR_KEYS = (
+    CONF_INTERNAL_SENSOR,
+    CONF_INTERNAL_SENSOR_2,
+    CONF_INTERNAL_SENSOR_3,
+    CONF_INTERNAL_SENSOR_4,
+)
+MAX_PROBES = len(PROBE_SENSOR_KEYS)
+
+# Optional display names for the probes ("Green", "Red" …), one key per
+# PROBE_SENSOR_KEYS slot.  Unset → the card and notifications say "Probe N".
+CONF_PROBE_NAME = "probe_name"
+CONF_PROBE_NAME_2 = "probe_name_2"
+CONF_PROBE_NAME_3 = "probe_name_3"
+CONF_PROBE_NAME_4 = "probe_name_4"
+PROBE_NAME_KEYS = (
+    CONF_PROBE_NAME,
+    CONF_PROBE_NAME_2,
+    CONF_PROBE_NAME_3,
+    CONF_PROBE_NAME_4,
+)
 
 # Probe usage modes (set at cook-start time, not in config flow)
 PROBE_MODE_INDIVIDUAL = "individual"

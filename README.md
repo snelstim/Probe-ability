@@ -4,10 +4,10 @@
 A Home Assistant custom integration that predicts when your meat will reach a target internal temperature — like a Meater or other predictive thermometer, but using any temperature sensors you already have.
 
 <p align="center">
-  <img src="docs/screenshots/collecting.jpeg" width="22%" alt="Collecting data">
-  <img src="docs/screenshots/pull-warning.jpeg" width="22%" alt="Pull from heat warning">
-  <img src="docs/screenshots/two-probes.jpeg" width="22%" alt="Two probes active">
-  <img src="docs/screenshots/probe-done.jpeg" width="22%" alt="Probe 2 done">
+  <img src="https://raw.githubusercontent.com/snelstim/Probe-ability/main/docs/screenshots/collecting.jpeg" width="22%" alt="Collecting data">
+  <img src="https://raw.githubusercontent.com/snelstim/Probe-ability/main/docs/screenshots/pull-warning.jpeg" width="22%" alt="Pull from heat warning">
+  <img src="https://raw.githubusercontent.com/snelstim/Probe-ability/main/docs/screenshots/two-probes.jpeg" width="22%" alt="Two probes active">
+  <img src="https://raw.githubusercontent.com/snelstim/Probe-ability/main/docs/screenshots/probe-done.jpeg" width="22%" alt="Probe 2 done">
 </p>
 
 ---

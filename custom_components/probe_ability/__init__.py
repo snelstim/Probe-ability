@@ -303,32 +303,53 @@ class CookMonitor:
     # ── Configuration helpers ────────────────────────────────────────────
 
     def _probe_count(self) -> int:
-        """Number of internal probes configured for this entry."""
+        """Number of probe slots in use: the highest configured probe number.
+
+        Slots below it that are empty still count (see _probe_sensors), so
+        probes 1 and 4 alone give 4.
+        """
         return len(self._probe_sensors())
 
-    def _probe_sensors(self) -> list[str]:
-        """Return entity_ids for all configured internal sensors, in probe order.
+    def _probe_sensors(self) -> list[str | None]:
+        """Internal sensor entity_id per probe slot, None where the slot is empty.
 
-        A probe's index is its position among the sensor keys that are set,
-        so leaving probe 2 empty but filling probe 3 still yields two probes.
+        A probe's index is its slot in the config flow (internal_sensor_N →
+        N-1), so "probe 4" is index 3 even when probes 2 and 3 are not
+        configured — the same number the entities, the services and the card
+        use.  Trailing empty slots are dropped, so a contiguous setup is
+        exactly as long as its probe count.
         """
-        return [
-            self.entry.data[key]
-            for key in PROBE_SENSOR_KEYS
-            if self.entry.data.get(key)
+        sensors: list[str | None] = [
+            self.entry.data.get(key) or None for key in PROBE_SENSOR_KEYS
         ]
+        while len(sensors) > 1 and sensors[-1] is None:
+            sensors.pop()
+        return sensors
+
+    @property
+    def probe_sensors(self) -> list[str | None]:
+        """Internal sensor entity_id per probe slot, None for an empty slot."""
+        return self._probe_sensors()
+
+    def probe_configured(self, index: int) -> bool:
+        """True if probe slot `index` has a sensor."""
+        sensors = self._probe_sensors()
+        return 0 <= index < len(sensors) and sensors[index] is not None
 
     @property
     def probe_labels(self) -> list[str | None]:
         """User-given probe names ("Green" …) aligned with _probe_sensors().
 
-        None for a probe that has no name; the card then shows its localised
-        "Probe N".
+        None for a probe that has no name (or an empty slot); the card then
+        shows its localised "Probe N".
         """
         return [
             (self.entry.data.get(name_key) or "").strip() or None
-            for sensor_key, name_key in zip(PROBE_SENSOR_KEYS, PROBE_NAME_KEYS)
             if self.entry.data.get(sensor_key)
+            else None
+            for sensor_key, name_key in zip(
+                PROBE_SENSOR_KEYS[: self._probe_count()], PROBE_NAME_KEYS
+            )
         ]
 
     def probe_label(self, index: int) -> str:
@@ -358,7 +379,7 @@ class CookMonitor:
         Brief Bluetooth dropouts (unavailable/unknown for < 60 s) are allowed.
         """
         sensors = self._probe_sensors()
-        if probe_index >= len(sensors):
+        if probe_index >= len(sensors) or sensors[probe_index] is None:
             return False
         entity_id = sensors[probe_index]
         state = self.hass.states.get(entity_id)
@@ -493,6 +514,19 @@ class CookMonitor:
                     self.probe_name.append(DEFAULT_COOK_NAME)
                 self._last_reading_ts = [0.0] * len(self.predictors)
                 self._probe_disconnected_since = [None] * len(self.predictors)
+                # A cook saved on a slot that has no sensor can never get a
+                # reading (a save from before slot numbering — probes 1 and 4
+                # used to be stored as 0 and 1 — or a probe cleared while it
+                # was cooking).  Drop it rather than show a frozen tile.
+                for i, active in enumerate(self.probe_active):
+                    if active and not self.probe_configured(i):
+                        _LOGGER.warning(
+                            "Dropping restored cook on probe %d: no sensor is "
+                            "configured for that probe",
+                            i + 1,
+                        )
+                        self.probe_active[i] = False
+                        self.predictors[i].reset()
 
             # Legacy format: single predictor (v1 saves)
             elif "predictor" in data:
@@ -561,29 +595,41 @@ class CookMonitor:
             )
 
         indices: list[int]
+        sensors = self._probe_sensors()
         if probe_mode == PROBE_MODE_INDIVIDUAL and probe_index is not None:
+            # An index outside the configured slots (a card built for four
+            # probes on a two-probe instance, or probe 2 when only 1 and 4
+            # are set up) is a configuration problem, not a sensor problem.
+            if not self.probe_configured(probe_index):
+                raise HomeAssistantError(
+                    translation_domain=DOMAIN,
+                    translation_key="probe_not_configured",
+                    translation_placeholders={
+                        "probe": self.probe_label(probe_index),
+                    },
+                )
             if not self._probe_sensor_ok(probe_index):
-                sensor_id = self._probe_sensors()[probe_index]
                 raise HomeAssistantError(
                     translation_domain=DOMAIN,
                     translation_key="probe_unavailable",
                     translation_placeholders={
                         "probe": self.probe_label(probe_index),
-                        "sensor_id": sensor_id,
+                        "sensor_id": sensors[probe_index],
                     },
                 )
             indices = [probe_index]
         else:
-            # Combined: only start probes that are currently reachable
-            indices = [
-                i for i in range(len(self.predictors)) if self._probe_sensor_ok(i)
-            ]
+            # Combined: only start probes that are currently reachable.
+            # Empty slots are skipped silently — only a configured probe
+            # whose sensor is down is worth a warning.
+            configured = [i for i, sensor_id in enumerate(sensors) if sensor_id]
+            indices = [i for i in configured if self._probe_sensor_ok(i)]
             if not indices:
                 raise HomeAssistantError(
                     translation_domain=DOMAIN,
                     translation_key="no_probes_available",
                 )
-            for skipped in set(range(len(self.predictors))) - set(indices):
+            for skipped in set(configured) - set(indices):
                 _LOGGER.warning(
                     "Probe %d sensor unavailable — skipping for this cook",
                     skipped + 1,
@@ -909,7 +955,8 @@ class CookMonitor:
     def _start_listening(self) -> None:
         """Subscribe to sensor state changes for all probes + ambient."""
         self._stop_listening()
-        watched = self._probe_sensors() + [self.entry.data[CONF_AMBIENT_SENSOR]]
+        watched = [sensor_id for sensor_id in self._probe_sensors() if sensor_id]
+        watched.append(self.entry.data[CONF_AMBIENT_SENSOR])
         self._unsub_listeners.append(
             async_track_state_change_event(
                 self.hass, watched, self._async_on_state_change
@@ -952,7 +999,7 @@ class CookMonitor:
         # Update each active probe that has passed its debounce threshold
         reading_added = False
         for i, sensor_id in enumerate(probe_sensors):
-            if not self.probe_active[i]:
+            if sensor_id is None or not self.probe_active[i]:
                 continue
             if now - self._last_reading_ts[i] < MIN_READING_INTERVAL:
                 continue

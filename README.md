@@ -85,6 +85,8 @@ The config flow is a one-time hardware setup. It does **not** ask for target tem
 
 > **Tip:** All sensor entities must have the `temperature` device class. The entity selector in the config flow filters for this automatically.
 
+> **Probe numbers follow the field, not the count.** The sensor in *Probe 4 sensor* is always probe 4 — its entities end in `_probe_4`, it is `probe_index: 3` in service calls and "Probe 4" on the card — even when probes 2 and 3 are left empty. So a 4-probe thermometer of which you only use probes 1 and 4 can be set up exactly like that.
+
 > **Temperature unit:** Choose **Fahrenheit** to have the card show all temperatures (targets, presets, current/ambient readings, pull temp) in °F. This is a display-only setting — internally everything is stored in Celsius, and probe readings are normalized to °C automatically based on each sensor's own `unit_of_measurement`, so a probe that reports in °F won't be double-converted. Change it any time via **⋮ → Reconfigure**.
 
 > **Tip:** Probe resolution matters. A probe that reports in 0.1°C increments gives the model much finer data to work with than one that rounds to the nearest 1°C — which produces a staircase signal that makes heating rate and deceleration features less accurate. If you have a choice of sensors, pick the higher-resolution one.
@@ -104,7 +106,7 @@ entity: sensor.probe_ability_time_remaining
 |---|---|---|
 | `entity` | **Yes** | The primary `time_remaining` sensor entity ID |
 | `entry_id` | No | Config entry ID, only needed when you have **multiple instances** of the integration installed. See [Multiple instances](#multiple-instances) |
-| `probe_sensors` | No | List of internal probe sensor entity IDs; enables per-probe availability checking in the card UI. See [Probe availability](#probe-availability). |
+| `probe_sensors` | No | Override of the sensors the card checks for probe availability, one entry per probe slot (`null` for an unused slot). Normally not needed: the card reads the integration's own sensor list from the `probe_sensors` attribute. See [Probe availability](#probe-availability). |
 | `ambient_sensor` | No | Ambient (oven/smoker) sensor entity ID. If set, the card blocks starting a cook until this sensor is available and returning a valid reading. The ambient temperature displayed in the card comes from the backend sensor attributes regardless of this setting. |
 | `target_temp_entity` | No | An `input_number` entity to link the card's target temperature to (probe 1 / combined mode). The card uses its value as the default target and writes changes back to it, so the card and a history-graph target line stay in sync — including **before** a cook starts. See [Linking the target temperature](#linking-the-target-temperature). |
 | `target_temp_entity_2` | No | Target-temp `input_number` for **probe 2** (individual mode). |
@@ -123,9 +125,9 @@ This sensor's **attributes** provide everything the card displays: current tempe
 
 The ambient temperature shown in the card header comes from the `ambient_temp` attribute on the `entity` sensor (written by the backend integration). The card config's `ambient_sensor` field is used solely as a **readiness check**: if set, the card will show "No probe sensors available" and block the Start button whenever that sensor is unavailable, unknown, or reading zero. Leave it empty to skip this check and always allow starting.
 
-**`probe_sensors` — enables live availability detection**
+**`probe_sensors` — which sensors the card watches for availability**
 
-Without `probe_sensors` configured, the card assumes all probes reported by the backend are present. When configured, the card reads each sensor's state directly and hides any probe that is `unavailable`, `unknown`, or returning `0` — so a disconnected probe disappears from the UI rather than showing stale data. Recommended for multi-probe setups so the card accurately reflects which probes are actually connected.
+The card hides any probe whose sensor is `unavailable`, `unknown`, or returning `0` — so a disconnected probe disappears from the UI rather than showing stale data. By default it watches the sensors configured in the integration (exposed as the `probe_sensors` attribute), so this option is only needed to watch different entities. When set, each entry is matched to the integration's probes by entity ID; an entry the integration does not know is taken by position (first entry = probe 1). Use `null` for a slot you leave to the default, e.g. `[sensor.probe_1, null, null, sensor.probe_4]`. Probes that are not configured in the integration are never shown.
 
 #### Linking the target temperature
 
@@ -234,7 +236,7 @@ Combined mode is unaffected — it always shows a single tile.
 
 ### Probe availability
 
-If `probe_sensors` is configured in the card YAML, the card checks sensor availability in real time before showing the idle form:
+The card checks the probe sensors in real time — the integration's configured sensors, or the card's `probe_sensors` override — before showing the idle form:
 
 | Available probes | UI shown |
 |---|---|
@@ -242,13 +244,13 @@ If `probe_sensors` is configured in the card YAML, the card checks sensor availa
 | **1** | Single form, no combined/individual toggle |
 | **2–4** | Full UI with mode toggle; only available probe slots shown in individual mode |
 
-Without `probe_sensors` configured the card assumes all probes are available and relies on the backend to raise an error if a probe is actually offline when you press Start. In that case a red notification toast appears in the HA frontend automatically.
+Only probes that exist in the integration are shown: with probes 1 and 4 configured the card offers exactly those two, and starting the second one starts probe 4. While the card cannot read the sensor list (for example while the integration is still starting) it assumes all probes are available and relies on the backend to raise an error if a probe is actually offline when you press Start. In that case a red notification toast appears in the HA frontend automatically.
 
 ---
 
 ## Entities
 
-One pair of entities is created per configured probe:
+One pair of entities is created per configured probe, numbered by probe slot — probes 1 and 4 alone give the probe 1 and the probe 4 pair:
 
 | Entity | Probe 1 | Probe 2 | Probe 3 | Probe 4 |
 |---|---|---|---|---|
@@ -267,9 +269,10 @@ The primary `time_remaining` sensor (probe 1) exposes all attributes the card ne
 |---|---|---|
 | `active` | bool | True if any probe is currently running |
 | `probe_mode` | string | `"combined"` or `"individual"` |
-| `probe_count` | int | Number of probes configured (1–4) |
+| `probe_count` | int | Probe slots in use: the highest configured probe number (1–4). The lists below have one entry per slot, empty slots included |
 | `probe_active` | list[bool] | Per-probe active state |
 | `probe_names` | list[str \| null] | Configured display name per probe (`null` where unnamed) |
+| `probe_sensors` | list[str \| null] | Internal sensor entity ID per probe slot (`null` for an empty slot) |
 
 **Present when probe 1 is active:**
 
@@ -313,7 +316,7 @@ Start a new cook. If a sensor is unavailable when this is called, a red error no
 | `target_temp` | No | 74 | Target internal temperature in °C |
 | `cook_name` | No | `"Cook"` | Name label for this cook ; also used by the ML model to select the correct meat type profile |
 | `probe_mode` | No | `"combined"` | `"combined"` or `"individual"` |
-| `probe_index` | No | — | Which probe to start (0–3). Only used in individual mode |
+| `probe_index` | No | — | Which probe to start: its number minus 1 (0–3), so probe 4 is `3` even when probes 2 and 3 are unused. Only used in individual mode |
 | `entry_id` | No | — | Target a specific integration instance (see below) |
 
 **Combined mode** : omit `probe_index`. All configured probes with available sensors are started together.
@@ -335,7 +338,7 @@ Stop a cook and clear data.
 
 | Parameter | Required | Default | Description |
 |---|---|---|---|
-| `probe_index` | No | — | Stop only this probe (0–3). Omit to stop all probes |
+| `probe_index` | No | — | Stop only this probe: its number minus 1 (0–3). Omit to stop all probes |
 | `entry_id` | No | — | Target a specific integration instance |
 
 ### `probe_ability.set_target`
@@ -345,7 +348,7 @@ Change the target temperature mid-cook without interrupting data collection.
 | Parameter | Required | Default | Description |
 |---|---|---|---|
 | `target_temp` | **Yes** | — | New target temperature in °C |
-| `probe_index` | No | — | Update only this probe (0–3). Omit to update all |
+| `probe_index` | No | — | Update only this probe: its number minus 1 (0–3). Omit to update all |
 | `entry_id` | No | — | Target a specific integration instance |
 
 ---
@@ -661,7 +664,7 @@ If a probe is inserted but still reads `0`, check the sensor state in **Develope
 
 ### Card shows "No probe sensors available" at idle
 
-Same as above — all configured `probe_sensors` are returning `0` or `unavailable`. Check that all probes are physically connected to the thermometer. With `probe_sensors` not configured in the card, this check is skipped and the card relies on the backend to catch missing probes when Start is pressed.
+Same as above — every probe sensor the card watches (the integration's configured sensors, or the card's `probe_sensors` override) is returning `0` or `unavailable`. Check that all probes are physically connected to the thermometer.
 
 ---
 

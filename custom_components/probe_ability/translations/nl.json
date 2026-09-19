@@ -96,7 +96,7 @@
         },
         "probe_index": {
           "name": "Probe-index",
-          "description": "Welke probe te starten (0–3). Alleen gebruikt in de individuele modus."
+          "description": "Welke probe te starten: het probenummer min 1 (0–3), dus probe 4 is 3 ook als probe 2 en 3 niet gebruikt worden. Alleen gebruikt in de individuele modus."
         }
       }
     },
@@ -110,7 +110,7 @@
         },
         "probe_index": {
           "name": "Probe-index",
-          "description": "Welke probe te stoppen (0–3). Laat leeg om alle probes te stoppen."
+          "description": "Welke probe te stoppen: het probenummer min 1 (0–3). Laat leeg om alle probes te stoppen."
         }
       }
     },
@@ -128,7 +128,7 @@
         },
         "probe_index": {
           "name": "Probe-index",
-          "description": "Welke probe bij te werken (0–3). Laat leeg om alle probes bij te werken."
+          "description": "Welke probe bij te werken: het probenummer min 1 (0–3). Laat leeg om alle probes bij te werken."
         }
       }
     }
@@ -139,6 +139,9 @@
     },
     "probe_unavailable": {
       "message": "Kan kook niet starten: sensor van {probe} ({sensor_id}) is niet beschikbaar"
+    },
+    "probe_not_configured": {
+      "message": "Kan kook niet starten: {probe} is niet geconfigureerd in deze Probe-ability-instantie"
     },
     "no_probes_available": {
       "message": "Kan kook niet starten: er zijn momenteel geen probe-sensoren beschikbaar"

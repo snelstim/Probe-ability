@@ -9,7 +9,10 @@ CONF_INTERNAL_SENSOR_4 = "internal_sensor_4"
 CONF_AMBIENT_SENSOR = "ambient_sensor"
 
 # Internal-probe config keys in probe order.  The first is required, the rest
-# are optional; a probe's index is its position among the keys that are set.
+# are optional.  A probe's index is its *slot* (internal_sensor_N → N-1), not
+# its position among the keys that happen to be set: with probes 1 and 4
+# configured, probe 4 is index 3 everywhere (entities, service calls, the
+# card) and slots 2 and 3 are simply empty.
 PROBE_SENSOR_KEYS = (
     CONF_INTERNAL_SENSOR,
     CONF_INTERNAL_SENSOR_2,

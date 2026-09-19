@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import re
 from datetime import datetime, timezone
 
 from homeassistant.components.sensor import (
@@ -11,10 +13,13 @@ from homeassistant.components.sensor import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfTime
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import CONF_TEMP_UNIT, DOMAIN, PROBE_MODE_COMBINED, TEMP_UNIT_CELSIUS
 from .predictor import pull_temp as _pull_temp
+
+_LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(
@@ -22,12 +27,22 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up sensor entities — one pair (time remaining + ETA) per configured probe."""
+    """Set up sensor entities — one pair (time remaining + ETA) per configured probe.
+
+    Probes are numbered by config slot, so probes 1 and 4 alone give the
+    probe-1 pair and the probe-4 pair; the empty slots 2 and 3 get nothing.
+    """
     monitor = hass.data[DOMAIN][entry.entry_id]
-    probe_count = len(monitor.predictors)
+    configured = [monitor.probe_configured(i) for i in range(len(monitor.predictors))]
+
+    # Entities of a probe that is no longer configured (cleared, or numbered
+    # differently before slot numbering) would otherwise linger forever.
+    _remove_stale_probe_entities(hass, entry.entry_id, configured)
 
     entities: list[SensorEntity] = []
-    for i in range(probe_count):
+    for i, is_configured in enumerate(configured):
+        if not is_configured:
+            continue
         tr = CookTimeRemainingSensor(monitor, entry, probe_index=i)
         eta = CookETASensor(monitor, entry, probe_index=i)
         entities.extend([tr, eta])
@@ -42,6 +57,49 @@ _PROBE_SUFFIX = {0: "", 1: "_2", 2: "_3", 3: "_4"}
 # Suffix appended to the entity translation_key so each probe gets its own
 # localised name (see the "entity" section of strings.json / translations).
 _PROBE_KEY_SUFFIX = {0: "", 1: "_probe2", 2: "_probe3", 3: "_probe4"}
+
+# Tail of a per-probe unique_id after the entry_id: "_time_remaining", "_eta",
+# "_time_remaining_2", "_eta_4", ...  (the _PROBE_SUFFIX scheme).
+_PROBE_UNIQUE_ID_TAIL = re.compile(r"_(?:time_remaining|eta)(?:_(?P<probe_no>\d+))?")
+
+
+def probe_index_of(entry_id: str, unique_id: str) -> int | None:
+    """Return the probe index a per-probe sensor unique_id belongs to.
+
+    None when ``unique_id`` is not one of this entry's per-probe sensors.
+    """
+    if not unique_id.startswith(entry_id):
+        return None
+    match = _PROBE_UNIQUE_ID_TAIL.fullmatch(unique_id, len(entry_id))
+    if match is None:
+        return None
+    probe_no = match.group("probe_no")
+    return int(probe_no) - 1 if probe_no else 0
+
+
+def _remove_stale_probe_entities(
+    hass: HomeAssistant, entry_id: str, configured: list[bool]
+) -> None:
+    """Delete registry entries of probes that have no sensor configured.
+
+    Home Assistant only purges an entry's registry entities when the whole
+    config entry is deleted.  Two things leave per-probe sensors behind
+    otherwise: a probe cleared via Reconfigure, and the switch to slot
+    numbering — a setup with probes 1 and 4 used to create the *probe 2*
+    entities for probe 4, which are now the probe 4 entities.
+    """
+    registry = er.async_get(hass)
+    for reg_entry in er.async_entries_for_config_entry(registry, entry_id):
+        index = probe_index_of(entry_id, reg_entry.unique_id)
+        if index is None or (index < len(configured) and configured[index]):
+            continue
+        _LOGGER.info(
+            "Removing %s: probe %s is not configured",
+            reg_entry.entity_id,
+            index + 1,
+        )
+        registry.async_remove(reg_entry.entity_id)
+
 
 # Pull temperature (carryover-adjusted) lives in predictor.py — HA-free, unit-tested.
 
@@ -157,10 +215,16 @@ class CookTimeRemainingSensor(CookPredictorSensorBase):
             ),
             "probe_index": idx,
             "probe_mode": self._monitor.probe_mode,
+            # Probe slots in use (the highest configured probe number); the
+            # lists below have one entry per slot, empty slots included.
             "probe_count": len(predictors),
             "probe_active": list(self._monitor.probe_active),
             # Configured display names ("Green" …), None where unnamed
             "probe_names": list(self._monitor.probe_labels),
+            # The internal sensor of each slot, None for an empty slot — lets
+            # the card check which probes exist and are reporting without a
+            # duplicate probe_sensors list in the card config.
+            "probe_sensors": list(self._monitor.probe_sensors),
         }
 
         if idx == 0:
@@ -222,6 +286,8 @@ class CookTimeRemainingSensor(CookPredictorSensorBase):
         # the card can render all probe slots regardless of probe 0's own state.
         if idx == 0:
             for extra_i in range(1, len(predictors)):
+                if not self._monitor.probe_configured(extra_i):
+                    continue  # empty slot — nothing to report
                 n = extra_i + 1  # human-readable probe number (2–4)
                 extra_pred = predictors[extra_i]
                 extra_active = self._monitor.probe_active[extra_i]

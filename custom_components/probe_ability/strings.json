@@ -96,7 +96,7 @@
         },
         "probe_index": {
           "name": "Probe index",
-          "description": "Which probe to start (0–3). Only used in individual mode."
+          "description": "Which probe to start: its number minus 1 (0–3), so probe 4 is 3 even if probes 2 and 3 are unused. Only used in individual mode."
         }
       }
     },
@@ -110,7 +110,7 @@
         },
         "probe_index": {
           "name": "Probe index",
-          "description": "Which probe to stop (0–3). Omit to stop all probes."
+          "description": "Which probe to stop: its number minus 1 (0–3). Omit to stop all probes."
         }
       }
     },
@@ -128,7 +128,7 @@
         },
         "probe_index": {
           "name": "Probe index",
-          "description": "Which probe to update (0–3). Omit to update all probes."
+          "description": "Which probe to update: its number minus 1 (0–3). Omit to update all probes."
         }
       }
     }
@@ -139,6 +139,9 @@
     },
     "probe_unavailable": {
       "message": "Cannot start cook: {probe} sensor ({sensor_id}) is not available"
+    },
+    "probe_not_configured": {
+      "message": "Cannot start cook: {probe} is not configured in this Probe-ability instance"
     },
     "no_probes_available": {
       "message": "Cannot start cook: no probe sensors are currently available"

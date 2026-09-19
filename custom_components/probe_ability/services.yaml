@@ -31,7 +31,7 @@ start_cook:
             - individual
     probe_index:
       name: Probe index
-      description: "Which probe to start (0–3). Only used in individual mode."
+      description: "Which probe to start: its number minus 1 (0–3), so probe 4 is 3 even if probes 2 and 3 are unused. Only used in individual mode."
       required: false
       selector:
         number:
@@ -51,7 +51,7 @@ stop_cook:
         text:
     probe_index:
       name: Probe index
-      description: "Which probe to stop (0–3). Omit to stop all probes."
+      description: "Which probe to stop: its number minus 1 (0–3). Omit to stop all probes."
       required: false
       selector:
         number:
@@ -81,7 +81,7 @@ set_target:
           unit_of_measurement: "°C"
     probe_index:
       name: Probe index
-      description: "Which probe to update (0–3). Omit to update all probes."
+      description: "Which probe to update: its number minus 1 (0–3). Omit to update all probes."
       required: false
       selector:
         number:

@@ -8,8 +8,11 @@
  *  - Individual mode: up to 4 independent probes (e.g. 4 steaks), each in its
  *    own tile — stacked, side by side or in a 2-column grid (probe_layout),
  *    optionally folding to a one-line summary (collapsible).  Probes are
- *    called "Probe N" unless named in the integration's Reconfigure dialog
- *    (e.g. "Green") — names arrive in the probe_names sensor attribute.
+ *    numbered by their slot in the integration (probe 4 is probe_index 3
+ *    even when probes 2 and 3 are unused; the probe_sensors attribute says
+ *    which slots exist) and called "Probe N" unless named in the
+ *    integration's Reconfigure dialog (e.g. "Green") — names arrive in the
+ *    probe_names sensor attribute.
  *  - Combined mode: multiple probes on one cook (e.g. brisket)
  *  - Circular SVG timer with two display modes:
  *      ⏱ Countdown — ring drains as time passes
@@ -26,6 +29,8 @@
  *   entry_id: <your_entry_id>                               (optional)
  *   probe_layout: vertical | horizontal | grid              (optional)
  *   collapsible: true | false                               (optional)
+ *   probe_sensors: [sensor.a, null, null, sensor.d]         (optional override
+ *                   of the sensors checked for availability, per probe slot)
  */
 
 const CARD_VERSION = "0.11.0";
@@ -449,7 +454,11 @@ class CookPredictorCard extends HTMLElement {
     }
     this._config = config;
     this._hass = null;
-    this._probeSensors = config.probe_sensors || [];
+    // Optional override of the sensors checked for probe availability, one
+    // entry per probe slot (null = no override for that slot).  Without it
+    // the card uses the integration's own sensor list, the probe_sensors
+    // attribute — see _slotSensors.
+    this._probeSensors = (config.probe_sensors || []).map((id) => (typeof id === "string" && id ? id : null));
     this._ambientSensor = config.ambient_sensor || null;
     // Per-probe target-temp helpers (index 0 = probe 1 / combined mode):
     // target_temp_entity, target_temp_entity_2 … target_temp_entity_4.
@@ -526,7 +535,8 @@ class CookPredictorCard extends HTMLElement {
         const ps = prev.states[entity];
         const pa = ps?.attributes || {};
         if (!pa.active && !na.active && pa.probe_count === na.probe_count &&
-            !this._targetHelpersChanged(prev, hass)) {
+            !this._targetHelpersChanged(prev, hass) &&
+            !this._probeAvailabilityChanged(prev, hass)) {
           return;
         }
       }
@@ -703,43 +713,93 @@ class CookPredictorCard extends HTMLElement {
 
   // Cache probe_count when attrs are available so we can show all probe slots
   // in the idle state even when the entity is unavailable (empty attributes).
+  // null until a count has been seen.
   get _cachedProbeCount() {
-    return parseInt(localStorage.getItem("probe_ability_probe_count") || "1", 10);
+    const n = parseInt(localStorage.getItem("probe_ability_probe_count") || "", 10);
+    return isNaN(n) ? null : n;
   }
 
   _cacheProbeCount(count) {
     try { localStorage.setItem("probe_ability_probe_count", String(count)); } catch (e) {}
   }
 
-  // True if the ambient sensor is available (or not configured in card config).
-  _ambientOk() {
-    if (!this._ambientSensor) return true;
-    const s = this._hass && this._hass.states[this._ambientSensor];
-    return s && s.state !== "unavailable" && s.state !== "unknown"
+  // True if a sensor entity exists and reports a non-zero number.
+  _sensorOk(id, hass = this._hass) {
+    const s = hass && hass.states[id];
+    return !!s && s.state !== "unavailable" && s.state !== "unknown"
            && !isNaN(parseFloat(s.state)) && parseFloat(s.state) !== 0;
   }
 
-  // Returns the indices (0-based) of probes whose sensors are currently
-  // available and reporting a numeric value.
-  // If probe_sensors is not configured in the card config, all probes are
-  // assumed available (backend validation will catch real problems).
-  // entityProbeIndex: the integration probe index that probe_sensors[0] maps to.
-  // Needed when a card shows a single non-first probe — e.g. a card whose
-  // entity is the probe-2 time_remaining sensor has entityProbeIndex=1, so
-  // probe_sensors[0] maps to integration probe 1, not probe 0.
-  _availableProbeIndices(totalCount, entityProbeIndex = 0) {
-    if (!this._probeSensors || !this._probeSensors.length) {
-      return Array.from({ length: totalCount }, (_, i) => i);
+  // True if the ambient sensor is available (or not configured in card config).
+  _ambientOk() {
+    return !this._ambientSensor || this._sensorOk(this._ambientSensor);
+  }
+
+  // The probe slots this card shows, each with the sensor whose state decides
+  // whether the slot is available: [{ idx, id }], idx being the integration
+  // probe index (0-based, = probe number - 1) and id an entity id or null
+  // when there is nothing to check.
+  //
+  // Which slots:
+  //   - probe_sensors in the card config → those entries.  Each is matched to
+  //     the integration's probes by entity id (the probe_sensors attribute);
+  //     an entry the integration does not know is taken by position, offset
+  //     by entityProbeIndex — a card whose entity is the probe-2 sensor with
+  //     probe_sensors: [that probe] shows just probe 2.  A config saved with
+  //     the gaps squeezed out ([probe_1, probe_4]) still resolves right.
+  //   - otherwise every slot 0..totalCount-1, checked against the
+  //     integration's own sensor list when it is known.
+  // Slots the integration reports as empty are never shown: with probes 1
+  // and 4 configured, probe_count is 4 and slots 1 and 2 have no sensor.
+  _slotSensors(totalCount, entityProbeIndex = 0) {
+    const configured = Array.isArray(this._configuredSensors) ? this._configuredSensors : null;
+    let slots;
+    if (this._probeSensors && this._probeSensors.length) {
+      slots = this._probeSensors.map((id, j) => {
+        const match = id && configured ? configured.indexOf(id) : -1;
+        const idx = match >= 0 ? match : j + entityProbeIndex;
+        return { idx, id: id || (configured && configured[idx]) || null };
+      });
+    } else {
+      slots = Array.from({ length: totalCount }, (_, idx) => ({
+        idx, id: (configured && configured[idx]) || null,
+      }));
     }
-    return this._probeSensors
-      .slice(0, totalCount)
-      .map((id, i) => ({ id, idx: i + entityProbeIndex }))
-      .filter(({ id }) => {
-        const s = this._hass && this._hass.states[id];
-        return s && s.state !== "unavailable" && s.state !== "unknown"
-               && !isNaN(parseFloat(s.state)) && parseFloat(s.state) !== 0;
-      })
+    const seen = new Set();
+    return slots.filter(({ idx }) => {
+      if (idx < 0 || idx >= totalCount || seen.has(idx)) return false;
+      seen.add(idx);
+      return !configured || !!configured[idx];
+    });
+  }
+
+  // Returns the indices (0-based) of the shown probes whose sensors are
+  // currently available and reporting a numeric value.  A slot with nothing
+  // to check is assumed available (backend validation catches real problems).
+  _availableProbeIndices(totalCount, entityProbeIndex = 0) {
+    return this._slotSensors(totalCount, entityProbeIndex)
+      .filter(({ id }) => !id || this._sensorOk(id))
       .map(({ idx }) => idx);
+  }
+
+  // True if a probe (or the ambient) sensor changed between available and
+  // not between two hass objects, or the integration's sensor list changed —
+  // the idle view must then be rebuilt so tiles appear and disappear live.
+  _probeAvailabilityChanged(prev, next) {
+    const na = next.states[this._config.entity]?.attributes || {};
+    if (Array.isArray(na.probe_sensors) && Array.isArray(this._configuredSensors) &&
+        JSON.stringify(na.probe_sensors) !== JSON.stringify(this._configuredSensors)) {
+      return true;
+    }
+    if (this._ambientSensor &&
+        this._sensorOk(this._ambientSensor, prev) !== this._sensorOk(this._ambientSensor, next)) {
+      return true;
+    }
+    const total = na.probe_count || this._cachedProbeCount || this._probeSensors.length || 1;
+    for (const { id } of this._slotSensors(total, this._entityProbeIndex(na))) {
+      if (id && this._sensorOk(id, prev) !== this._sensorOk(id, next)) return true;
+    }
+    return false;
   }
 
   // Integration probe index (0-based) this card's entity represents.
@@ -827,6 +887,17 @@ class CookPredictorCard extends HTMLElement {
       catch (e) { this._probeNames = []; }
     }
 
+    // The integration's sensor per probe slot (null = empty slot), cached the
+    // same way; drives which slots are shown and their availability check.
+    const sensorsKey = `probe_ability_probe_sensors:${entity}`;
+    if (Array.isArray(attrs.probe_sensors)) {
+      this._configuredSensors = attrs.probe_sensors;
+      try { localStorage.setItem(sensorsKey, JSON.stringify(attrs.probe_sensors)); } catch (e) {}
+    } else if (!this._configuredSensors) {
+      try { this._configuredSensors = JSON.parse(localStorage.getItem(sensorsKey) || "null"); }
+      catch (e) { this._configuredSensors = null; }
+    }
+
     if (!isActive) {
       this._renderIdle(attrs);
     } else if (probeMode === "individual") {
@@ -846,12 +917,15 @@ class CookPredictorCard extends HTMLElement {
 
   _renderIdle(attrs) {
     const probeMode = this._probeMode;
-    // Use probe_sensors.length as the authoritative total when configured —
-    // attrs.probe_count is absent while idle (sensor unavailable = no attrs),
-    // and _cachedProbeCount defaults to 1 which causes the wrong branch.
-    const probeCount = this._probeSensors.length || attrs.probe_count || this._cachedProbeCount;
-    // probe_index tells us which integration probe this card's entity represents.
-    // probe_sensors[0] maps to that probe, probe_sensors[1] to the next, etc.
+    // The integration's probe_count (probe slots in use) is authoritative — a
+    // card config listing more sensors than the instance has must not add
+    // slots it cannot start.  While the attributes are missing (HA starting
+    // up, integration reloading) fall back to the cached count, then to the
+    // card's own sensor list.
+    const probeCount = attrs.probe_count || this._cachedProbeCount || this._probeSensors.length || 1;
+    // probe_index tells us which integration probe this card's entity
+    // represents; a card-config probe_sensors entry the integration does not
+    // know is taken relative to it (see _slotSensors).
     const entityProbeIndex = this._entityProbeIndex(attrs);
     const available = this._availableProbeIndices(probeCount, entityProbeIndex);
 
@@ -1652,7 +1726,7 @@ class CookPredictorCard extends HTMLElement {
   }
 
   _renderActiveIndividual(state, attrs) {
-    const probeCount = attrs.probe_count || this._cachedProbeCount;
+    const probeCount = attrs.probe_count || this._cachedProbeCount || 1;
     const probeActiveList = attrs.probe_active || Array(probeCount).fill(false);
     const entityProbeIndex = this._entityProbeIndex(attrs);
 
@@ -2264,12 +2338,15 @@ class CookPredictorCardEditor extends HTMLElement {
     if (data.collapsible === false) cfg.collapsible = false;
     else delete cfg.collapsible;
     delete cfg.eta_entity;   // retired option — tidy it out of edited configs
+    // probe_sensors is positional — entry i belongs to probe i+1 — so an
+    // unused slot stays null rather than shifting probe 4 down to "probe 2".
     const probes = [];
     for (let i = 0; i < MAX_PROBES; i++) {
       setOrDelete(_targetKey(i), data[_targetKey(i)]);
-      probes.push(data[`probe_sensor_${i}`]);
+      probes.push(data[`probe_sensor_${i}`] || null);
     }
-    setOrDelete("probe_sensors", probes.filter(Boolean).length ? probes.filter(Boolean) : null);
+    while (probes.length && probes[probes.length - 1] === null) probes.pop();
+    setOrDelete("probe_sensors", probes.length ? probes : null);
     return cfg;
   }
 

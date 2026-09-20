@@ -29,8 +29,8 @@
  *   entry_id: <your_entry_id>                               (optional)
  *   probe_layout: vertical | horizontal | grid              (optional)
  *   collapsible: true | false                               (optional)
- *   probe_sensors: [sensor.a, null, null, sensor.d]         (optional override
- *                   of the sensors checked for availability, per probe slot)
+ *   probe_sensors: [sensor.a, sensor.d]                     (optional: show only
+ *                   these probes, named by their sensor entity id)
  */
 
 const CARD_VERSION = "0.11.1";
@@ -454,10 +454,10 @@ class CookPredictorCard extends HTMLElement {
     }
     this._config = config;
     this._hass = null;
-    // Optional override of the sensors checked for probe availability, one
-    // entry per probe slot (null = no override for that slot).  Without it
-    // the card uses the integration's own sensor list, the probe_sensors
-    // attribute — see _slotSensors.
+    // Optional: the probes this card shows, named by their sensor entity id
+    // (null = whatever probe sits at that position).  Without it every probe
+    // of the instance is shown, from the integration's own sensor list (the
+    // probe_sensors attribute) — see _slotSensors.
     this._probeSensors = (config.probe_sensors || []).map((id) => (typeof id === "string" && id ? id : null));
     this._ambientSensor = config.ambient_sensor || null;
     // Per-probe target-temp helpers (index 0 = probe 1 / combined mode):
@@ -736,41 +736,55 @@ class CookPredictorCard extends HTMLElement {
   }
 
   // The probe slots this card shows, each with the sensor whose state decides
-  // whether the slot is available: [{ idx, id }], idx being the integration
-  // probe index (0-based, = probe number - 1) and id an entity id or null
-  // when there is nothing to check.
+  // whether the slot is available: [{ idx, id }] in slot order, idx being the
+  // integration probe index (0-based, = probe number - 1) and id an entity
+  // id or null when there is nothing to check.
   //
-  // Which slots:
-  //   - probe_sensors in the card config → those entries.  Each is matched to
-  //     the integration's probes by entity id (the probe_sensors attribute);
-  //     an entry the integration does not know is taken by position, offset
-  //     by entityProbeIndex — a card whose entity is the probe-2 sensor with
-  //     probe_sensors: [that probe] shows just probe 2.  A config saved with
-  //     the gaps squeezed out ([probe_1, probe_4]) still resolves right.
-  //   - otherwise every slot 0..totalCount-1, checked against the
-  //     integration's own sensor list when it is known.
+  // Without probe_sensors in the card config every slot 0..totalCount-1 is
+  // shown, checked against the integration's own sensor list (the
+  // probe_sensors attribute) when it is known.  With it, the card shows only
+  // the probes whose configured sensor is named in the list — matched by
+  // entity id whatever the order, so a config saved with the gaps squeezed
+  // out ([probe_1, probe_4]) or one listing every physical probe of a
+  // four-probe thermometer resolves right, and an entry that is not a sensor
+  // of this instance is ignored (it must not claim a slot by position: with
+  // probe 4's sensor in the integration's second field, "probe_2" at
+  // position 1 would otherwise take slot 1 from it).  That is also how one
+  // card per probe works: a card whose entity is the probe-2 sensor with
+  // probe_sensors: [that probe] shows just probe 2.  Entries are taken by
+  // position, offset by entityProbeIndex, only while the integration's list
+  // is unknown (attributes missing, nothing cached); a null entry always is.
   // Slots the integration reports as empty are never shown: with probes 1
   // and 4 configured, probe_count is 4 and slots 1 and 2 have no sensor.
   _slotSensors(totalCount, entityProbeIndex = 0) {
     const configured = Array.isArray(this._configuredSensors) ? this._configuredSensors : null;
-    let slots;
-    if (this._probeSensors && this._probeSensors.length) {
-      slots = this._probeSensors.map((id, j) => {
-        const match = id && configured ? configured.indexOf(id) : -1;
-        const idx = match >= 0 ? match : j + entityProbeIndex;
-        return { idx, id: id || (configured && configured[idx]) || null };
-      });
-    } else {
-      slots = Array.from({ length: totalCount }, (_, idx) => ({
-        idx, id: (configured && configured[idx]) || null,
-      }));
+    const list = this._probeSensors || [];
+    const exists = (idx) => idx >= 0 && idx < totalCount && (!configured || !!configured[idx]);
+    if (!list.length) {
+      return Array.from({ length: totalCount }, (_, idx) => ({ idx, id: (configured && configured[idx]) || null }))
+        .filter(({ idx }) => exists(idx));
     }
-    const seen = new Set();
-    return slots.filter(({ idx }) => {
-      if (idx < 0 || idx >= totalCount || seen.has(idx)) return false;
-      seen.add(idx);
-      return !configured || !!configured[idx];
+    const slots = [];
+    const claimed = new Set();
+    const claim = (idx, id) => {
+      if (!exists(idx) || claimed.has(idx)) return;
+      claimed.add(idx);
+      slots.push({ idx, id });
+    };
+    // Entries naming one of the instance's sensors take that probe's slot.
+    if (configured) {
+      for (const id of list) {
+        if (id && configured.indexOf(id) >= 0) claim(configured.indexOf(id), id);
+      }
+    }
+    // Positional entries: null ones, and every entry while the instance's
+    // sensor list is unknown.
+    list.forEach((id, j) => {
+      if (id && configured) return;
+      const idx = j + entityProbeIndex;
+      claim(idx, id || (configured && configured[idx]) || null);
     });
+    return slots.sort((a, b) => a.idx - b.idx);
   }
 
   // Returns the indices (0-based) of the shown probes whose sensors are

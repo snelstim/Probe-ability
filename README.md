@@ -106,7 +106,7 @@ entity: sensor.probe_ability_time_remaining
 |---|---|---|
 | `entity` | **Yes** | The primary `time_remaining` sensor entity ID |
 | `entry_id` | No | Config entry ID, only needed when you have **multiple instances** of the integration installed. See [Multiple instances](#multiple-instances) |
-| `probe_sensors` | No | Override of the sensors the card checks for probe availability, one entry per probe slot (`null` for an unused slot). Normally not needed: the card reads the integration's own sensor list from the `probe_sensors` attribute. See [Probe availability](#probe-availability). |
+| `probe_sensors` | No | Show only these probes: the sensor entity IDs (as configured in the integration) of the probes this card is for, e.g. for one card per probe. Omit to show every probe of the instance. See [Probe availability](#probe-availability). |
 | `ambient_sensor` | No | Ambient (oven/smoker) sensor entity ID. If set, the card blocks starting a cook until this sensor is available and returning a valid reading. The ambient temperature displayed in the card comes from the backend sensor attributes regardless of this setting. |
 | `target_temp_entity` | No | An `input_number` entity to link the card's target temperature to (probe 1 / combined mode). The card uses its value as the default target and writes changes back to it, so the card and a history-graph target line stay in sync — including **before** a cook starts. See [Linking the target temperature](#linking-the-target-temperature). |
 | `target_temp_entity_2` | No | Target-temp `input_number` for **probe 2** (individual mode). |
@@ -125,9 +125,9 @@ This sensor's **attributes** provide everything the card displays: current tempe
 
 The ambient temperature shown in the card header comes from the `ambient_temp` attribute on the `entity` sensor (written by the backend integration). The card config's `ambient_sensor` field is used solely as a **readiness check**: if set, the card will show "No probe sensors available" and block the Start button whenever that sensor is unavailable, unknown, or reading zero. Leave it empty to skip this check and always allow starting.
 
-**`probe_sensors` — which sensors the card watches for availability**
+**`probe_sensors` — which probes this card shows**
 
-The card hides any probe whose sensor is `unavailable`, `unknown`, or returning `0` — so a disconnected probe disappears from the UI rather than showing stale data. By default it watches the sensors configured in the integration (exposed as the `probe_sensors` attribute), so this option is only needed to watch different entities. When set, each entry is matched to the integration's probes by entity ID; an entry the integration does not know is taken by position (first entry = probe 1). Use `null` for a slot you leave to the default, e.g. `[sensor.probe_1, null, null, sensor.probe_4]`. Probes that are not configured in the integration are never shown.
+The card hides any probe whose sensor is `unavailable`, `unknown`, or returning `0` — so a disconnected probe disappears from the UI rather than showing stale data. It knows the sensors from the integration itself (the `probe_sensors` attribute), so you normally leave this option out and get every probe of the instance. Set it to limit the card to some of them — for example one card per probe — by listing their sensor entity IDs exactly as configured in the integration. Entries are matched by entity ID, so the order does not matter, and an entry that is not a sensor of this instance is ignored. Probes that are not configured in the integration are never shown.
 
 #### Linking the target temperature
 
@@ -236,7 +236,7 @@ Combined mode is unaffected — it always shows a single tile.
 
 ### Probe availability
 
-The card checks the probe sensors in real time — the integration's configured sensors, or the card's `probe_sensors` override — before showing the idle form:
+The card checks the probe sensors in real time — the ones configured in the integration, limited to the probes named in the card's `probe_sensors` if that is set — before showing the idle form:
 
 | Available probes | UI shown |
 |---|---|
@@ -664,7 +664,7 @@ If a probe is inserted but still reads `0`, check the sensor state in **Develope
 
 ### Card shows "No probe sensors available" at idle
 
-Same as above — every probe sensor the card watches (the integration's configured sensors, or the card's `probe_sensors` override) is returning `0` or `unavailable`. Check that all probes are physically connected to the thermometer.
+Same as above — every probe sensor the card watches (the integration's configured sensors, or those named in the card's `probe_sensors`) is returning `0` or `unavailable`. Check that all probes are physically connected to the thermometer.
 
 ---
 

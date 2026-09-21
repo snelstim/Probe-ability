@@ -505,18 +505,14 @@ class CookPredictorCard extends HTMLElement {
   set hass(hass) {
     const prev = this._hass;
     this._hass = hass;
-    this._saveIdleFormState();
 
     // Never rebuild the card while the user is interacting with a form control
     // (category/cut/doneness dropdown or the temp input) — a re-render would
-    // close an open dropdown or drop focus. This applies even when another probe
-    // is running, because the active-individual view still shows idle setup
+    // close an open dropdown or drop focus, and on a phone the keyboard goes
+    // with it and the page jumps. This applies even when another probe is
+    // running, because the active-individual view still shows idle setup
     // forms for the not-yet-started probes.
-    const focused = document.activeElement;
-    if (focused && this.contains(focused) &&
-        (focused.tagName === "SELECT" || focused.tagName === "INPUT")) {
-      return;
-    }
+    if (this._formControlFocused()) return;
 
     // Follow external changes to a linked target helper into stored idle temps.
     this._applyLinkedTempChanges(prev, hass);
@@ -526,19 +522,26 @@ class CookPredictorCard extends HTMLElement {
     const na = ns?.attributes || {};
     const isIdle = !na.active;
 
-    if (isIdle) {
-      // During idle the form is driven entirely by local state, not HA state.
-      // Skip if nothing that affects the idle view has changed — but a change to
-      // a linked target helper must still trigger a re-render so the idle target
-      // temp follows it.
-      if (prev) {
-        const ps = prev.states[entity];
-        const pa = ps?.attributes || {};
+    // hass arrives for every state change anywhere in Home Assistant.  Only
+    // rebuild when something this card shows has changed: its own entity (a
+    // new state object — HA keeps the old one while state and attributes are
+    // unchanged), a linked target helper, or a probe / ambient sensor going
+    // (un)available.  Rebuilding for anything else would tear down the setup
+    // forms of the idle probes under the user's fingers.
+    if (prev) {
+      const ps = prev.states[entity];
+      const pa = ps?.attributes || {};
+      const helpersOrSensorsChanged =
+        this._targetHelpersChanged(prev, hass) || this._probeAvailabilityChanged(prev, hass);
+      if (isIdle) {
+        // During idle the form is driven entirely by local state, not HA
+        // state; of the entity only active and the slot count matter.
         if (!pa.active && !na.active && pa.probe_count === na.probe_count &&
-            !this._targetHelpersChanged(prev, hass) &&
-            !this._probeAvailabilityChanged(prev, hass)) {
+            !helpersOrSensorsChanged) {
           return;
         }
+      } else if (ps === ns && !helpersOrSensorsChanged) {
+        return;
       }
     }
 
@@ -546,7 +549,17 @@ class CookPredictorCard extends HTMLElement {
     // The prompt is an inline DOM replacement — a re-render would wipe it.
     if (!isIdle && this._confirmPending) return;
 
+    this._saveIdleFormState();
     this._render();
+  }
+
+  // True while a <select> or <input> of this card has focus.  Home Assistant
+  // nests the dashboard in shadow roots, so document.activeElement is the
+  // outermost host, never the control itself — follow the chain down.
+  _formControlFocused() {
+    let el = document.activeElement;
+    while (el && el.shadowRoot && el.shadowRoot.activeElement) el = el.shadowRoot.activeElement;
+    return !!el && this.contains(el) && (el.tagName === "SELECT" || el.tagName === "INPUT");
   }
 
   _saveIdleFormState() {

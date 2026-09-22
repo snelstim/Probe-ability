@@ -43,6 +43,7 @@ from .const import (
     LIVE_ACTIVITY_MIN_HA,
     TEMP_UNIT_CELSIUS,
     TEMP_UNIT_FAHRENHEIT,
+    display_unit,
 )
 
 SETUP_SCHEMA = vol.Schema(
@@ -125,11 +126,17 @@ class CookPredictorConfigFlow(ConfigFlow, domain=DOMAIN):
                 data_updates=user_input,
             )
 
+        # Entries from before 0.11.5 store the unit as "C" / "F"; the selector's
+        # options are lowercase, so normalise or the field shows up empty.
+        suggested = {
+            **entry.data,
+            CONF_TEMP_UNIT: (
+                TEMP_UNIT_FAHRENHEIT if display_unit(entry.data) == "F" else TEMP_UNIT_CELSIUS
+            ),
+        }
         return self.async_show_form(
             step_id="reconfigure",
-            data_schema=self.add_suggested_values_to_schema(
-                SETUP_SCHEMA, entry.data
-            ),
+            data_schema=self.add_suggested_values_to_schema(SETUP_SCHEMA, suggested),
         )
 
 

@@ -31,7 +31,6 @@ from .const import (
     CONF_EXPORT_DATA,
     CONF_LIVE_ACTIVITY_TARGETS,
     CONF_SHARE_DATA,
-    CONF_TEMP_UNIT,
     DEFAULT_COOK_NAME,
     DEFAULT_TARGET_TEMP,
     DOMAIN,
@@ -49,7 +48,7 @@ from .const import (
     SUPABASE_KEY,
     SUPABASE_URL,
     TARGET_REACHED_TOLERANCE_C,
-    TEMP_UNIT_CELSIUS,
+    display_unit,
 )
 from .live_activity import LiveActivityManager
 from .predictor import CookPredictor
@@ -65,6 +64,10 @@ def _to_celsius(value: float, unit: str) -> float:
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = [Platform.SENSOR]
+
+# Configured through config entries only — nothing under `probe_ability:` in
+# configuration.yaml (async_setup just registers the card's static files).
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 _WWW_DIR = Path(__file__).parent / "www"
 _URL_BASE = "/probe_ability"
@@ -275,7 +278,7 @@ class CookMonitor:
         self.live_activity = LiveActivityManager(
             hass,
             entry.entry_id,
-            entry.data.get(CONF_TEMP_UNIT, TEMP_UNIT_CELSIUS),
+            display_unit(entry.data),
             list(entry.options.get(CONF_LIVE_ACTIVITY_TARGETS, [])),
             _LOGGER,
         )

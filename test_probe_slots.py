@@ -123,7 +123,8 @@ _stub("homeassistant.core", HomeAssistant=object, Event=object, ServiceCall=obje
       callback=lambda f: f)
 _stub("homeassistant.exceptions", HomeAssistantError=HomeAssistantError)
 _stub("homeassistant.helpers")
-_stub("homeassistant.helpers.config_validation", string=str)
+_stub("homeassistant.helpers.config_validation", string=str,
+      config_entry_only_config_schema=lambda domain: None)
 _stub("homeassistant.helpers.event", async_call_later=lambda *a, **k: (lambda: None),
       async_track_state_change_event=_track_state_change)
 _stub("homeassistant.helpers.storage", Store=FakeStore)
@@ -450,6 +451,16 @@ def test_restore() -> None:
     check("listening resumed on the configured sensors only", TRACKED[-1] == [P1, P4, AMBIENT])
 
 
+def test_display_unit() -> None:
+    print("display_unit()")
+    cases = (({}, "C"), ({"temp_unit": "C"}, "C"), ({"temp_unit": "F"}, "F"),
+             ({"temp_unit": "c"}, "C"), ({"temp_unit": "f"}, "F"), ({"temp_unit": None}, "C"))
+    for data, want in cases:
+        check(f"{data} reads as {want}", const.display_unit(data) == want, const.display_unit(data))
+    check("new entries store the lowercase option keys hassfest requires",
+          const.TEMP_UNIT_CELSIUS == "c" and const.TEMP_UNIT_FAHRENHEIT == "f")
+
+
 def main() -> None:
     test_slot_discovery()
     test_start_cook_individual()
@@ -457,6 +468,7 @@ def main() -> None:
     test_reading_routing()
     test_sensor_platform()
     test_restore()
+    test_display_unit()
     print(f"\nAll {PASSED} checks passed")
 
 

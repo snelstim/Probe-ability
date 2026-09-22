@@ -64,10 +64,20 @@ TARGET_REACHED_TOLERANCE_C = 0.5
 # Storage
 STORAGE_VERSION = 1
 
-# Temperature display unit (°C or °F) — stored in config entry, set once at setup
+# Temperature display unit (°C or °F) — stored in the config entry, set at setup.
+# The stored values are the selector's option keys and must be lowercase
+# (hassfest); entries created before 0.11.5 hold "C" / "F".  Read the unit
+# with display_unit(), which accepts both.
 CONF_TEMP_UNIT = "temp_unit"
-TEMP_UNIT_CELSIUS = "C"
-TEMP_UNIT_FAHRENHEIT = "F"
+TEMP_UNIT_CELSIUS = "c"
+TEMP_UNIT_FAHRENHEIT = "f"
+
+
+def display_unit(data) -> str:
+    """The configured display unit as "C" or "F", whichever case was stored."""
+    value = str(data.get(CONF_TEMP_UNIT) or TEMP_UNIT_CELSIUS).lower()
+    return "F" if value == TEMP_UNIT_FAHRENHEIT else "C"
+
 
 # Data export (fine-tuning / analysis)
 CONF_EXPORT_DATA = "export_cook_data"

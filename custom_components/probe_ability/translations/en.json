@@ -60,8 +60,8 @@
   "selector": {
     "temp_unit": {
       "options": {
-        "C": "Celsius (°C)",
-        "F": "Fahrenheit (°F)"
+        "c": "Celsius (°C)",
+        "f": "Fahrenheit (°F)"
       }
     }
   },

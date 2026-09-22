@@ -16,7 +16,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONF_TEMP_UNIT, DOMAIN, PROBE_MODE_COMBINED, TEMP_UNIT_CELSIUS
+from .const import DOMAIN, PROBE_MODE_COMBINED, display_unit
 from .predictor import pull_temp as _pull_temp
 
 _LOGGER = logging.getLogger(__name__)
@@ -228,7 +228,7 @@ class CookTimeRemainingSensor(CookPredictorSensorBase):
         }
 
         if idx == 0:
-            attrs["temp_unit"] = self._entry.data.get(CONF_TEMP_UNIT, TEMP_UNIT_CELSIUS)
+            attrs["temp_unit"] = display_unit(self._entry.data)
 
         # Always expose ML availability on the primary sensor so it's visible
         # in Developer Tools without needing an active cook.

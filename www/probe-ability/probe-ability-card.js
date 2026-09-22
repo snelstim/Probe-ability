@@ -373,6 +373,22 @@ const CIRC = 314.16; // 2π × 50
 // Most probes one integration instance can have (internal_sensor … internal_sensor_4).
 const MAX_PROBES = 4;
 
+// Elements the views attach listeners to.  _morph keeps them across renders
+// only when their identity is unchanged (see _sameIdentity).
+const _INTERACTIVE = "button, select, input, [data-toggle-probe], #cp-ring-container";
+// Attributes the wiring code adds to elements (not part of the markup); the
+// morph leaves them alone so a kept element stays wired exactly once.
+const _WIRING_ATTRS = new Set(["data-wired", "data-shown", "data-next", "data-confirm-label"]);
+// Same id and the same data-* attributes (other than the wiring ones): the
+// listeners of `a` mean the same thing for `b`.
+function _sameIdentity(a, b) {
+  if (a.id !== b.id) return false;
+  const data = (el) => Array.from(el.attributes)
+    .filter(({ name }) => name.startsWith("data-") && !_WIRING_ATTRS.has(name))
+    .map(({ name, value }) => `${name}=${value}`).sort().join("&");
+  return data(a) === data(b);
+}
+
 // Card-config key of the target-temp helper for probe index i.
 const _targetKey = (i) => (i === 0 ? "target_temp_entity" : `target_temp_entity_${i + 1}`);
 
@@ -866,6 +882,74 @@ class CookPredictorCard extends HTMLElement {
     this._render();
   }
 
+  // Every view hands its markup to _setHtml through this setter.
+  set _html(html) { this._setHtml(html); }
+
+  // Update the card's DOM in place to match the new markup.
+  //
+  // Every view renders one <ha-card>…</ha-card>.  Replacing the DOM
+  // wholesale (this.innerHTML = …) is what made the page jump on Safari and
+  // the iPad: WebKit lays the page out in the middle of the update, while
+  // the new <ha-card> (a Lit element) or the new <ha-icon>s inside it have
+  // not rendered yet, and moves the scroll position to fit that shorter page
+  // — on every reading once a cook runs.  Morphing the existing tree keeps
+  // already-rendered nodes, so nothing is ever missing during a layout, and
+  // as a bonus the ring and the icons no longer flicker.  The first render,
+  // or anything unexpected, still falls back to a plain replacement.
+  _setHtml(html) {
+    const tpl = document.createElement("template");
+    tpl.innerHTML = html;
+    const next = tpl.content.firstElementChild;
+    const cur = this.firstElementChild;
+    if (!next || next.tagName !== "HA-CARD" || !cur || cur.tagName !== "HA-CARD" ||
+        this.childElementCount !== 1) {
+      this.innerHTML = html;
+      return;
+    }
+    this._morph(cur, next);
+  }
+
+  // Make element `o` (live) equal to `m` (parsed, detached): sync attributes,
+  // then children by position — text nodes get new data, elements of the same
+  // tag are morphed recursively, anything else is replaced.  Removing a node
+  // is what moves the scroll on WebKit, so even the interactive elements are
+  // kept as long as their identity (id and data-* attributes, which is what
+  // their listeners key on) is unchanged.  Every wiring site guards itself
+  // with data-wired and reads changing values from data-* at event time;
+  // those bookkeeping attributes survive the sync.
+  _morph(o, m) {
+    for (const { name } of Array.from(o.attributes)) {
+      if (_WIRING_ATTRS.has(name)) continue;
+      if (!m.hasAttribute(name)) o.removeAttribute(name);
+    }
+    for (const { name, value } of Array.from(m.attributes)) {
+      if (o.getAttribute(name) !== value) o.setAttribute(name, value);
+    }
+    if (o.tagName === "STYLE") {
+      if (o.textContent !== m.textContent) o.textContent = m.textContent;
+      return;
+    }
+    const a = Array.from(o.childNodes);
+    const b = Array.from(m.childNodes);
+    for (let i = 0; i < Math.max(a.length, b.length); i++) {
+      const oc = a[i];
+      const mc = b[i];
+      if (!mc) { oc.remove(); continue; }
+      if (!oc) { o.appendChild(mc); continue; }
+      if (oc.nodeType === Node.TEXT_NODE && mc.nodeType === Node.TEXT_NODE) {
+        if (oc.data !== mc.data) oc.data = mc.data;
+        continue;
+      }
+      const same = oc.nodeType === Node.ELEMENT_NODE && mc.nodeType === Node.ELEMENT_NODE &&
+        oc.tagName === mc.tagName && (!mc.matches(_INTERACTIVE) || _sameIdentity(oc, mc));
+      if (!same) { oc.replaceWith(mc); continue; }
+      this._morph(oc, mc);
+    }
+    // A kept control shows the value the markup asks for (the user's own
+    // edits are already in the markup: the handlers store them first).
+    if ((o.tagName === "INPUT" || o.tagName === "SELECT") && o.value !== m.value) o.value = m.value;
+  }
+
   _render() {
     if (!this._hass) return;
     _setLang(this._hass);
@@ -878,7 +962,7 @@ class CookPredictorCard extends HTMLElement {
     const state = this._hass.states[entity];
 
     if (!state) {
-      this.innerHTML = `
+      this._html = `
         <ha-card header="Probe-ability">
           <div style="padding:16px;color:var(--error-color);">
             ${t("entity_not_found", { entity })}
@@ -976,7 +1060,7 @@ class CookPredictorCard extends HTMLElement {
       probeContent = this._idleCombinedForm();
     }
 
-    this.innerHTML = `
+    this._html = `
       <ha-card>
         <div style="padding:20px;">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">
@@ -989,8 +1073,10 @@ class CookPredictorCard extends HTMLElement {
         </div>
       </ha-card>`;
 
-    // Mode toggle buttons
+    // Mode toggle buttons (kept across renders — wire once)
     this.querySelectorAll("#cp-mode-toggle button").forEach((btn) => {
+      if (btn.dataset.wired) return;
+      btn.dataset.wired = "1";
       btn.addEventListener("click", () => this._setProbeMode(btn.dataset.mode));
     });
 
@@ -1006,7 +1092,7 @@ class CookPredictorCard extends HTMLElement {
   }
 
   _renderNoSensors() {
-    this.innerHTML = `
+    this._html = `
       <ha-card>
         <div style="padding:20px;">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">
@@ -1028,7 +1114,7 @@ class CookPredictorCard extends HTMLElement {
     const slotKey = `sp-${probeIndex}`;
     const state = this._slotState(slotKey);
     const unit = this._tempUnit || "C";
-    this.innerHTML = `
+    this._html = `
       <ha-card>
         <div style="padding:20px;">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">
@@ -1331,14 +1417,21 @@ class CookPredictorCard extends HTMLElement {
     this._render();
   }
 
+  // Tile headers survive re-renders (see _morph), so wire each one once and
+  // read the tile count at click time rather than capturing it.
   _wireTileToggles(shownCount) {
     this.querySelectorAll("[data-toggle-probe]").forEach((el) => {
-      const i = parseInt(el.dataset.toggleProbe, 10);
-      el.addEventListener("click", () => this._toggleExpanded(i, shownCount));
+      el.dataset.shown = String(shownCount);
+      if (el.dataset.wired) return;
+      el.dataset.wired = "1";
+      const toggle = () => this._toggleExpanded(
+        parseInt(el.dataset.toggleProbe, 10), parseInt(el.dataset.shown, 10),
+      );
+      el.addEventListener("click", toggle);
       el.addEventListener("keydown", (e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          this._toggleExpanded(i, shownCount);
+          toggle();
         }
       });
     });
@@ -1384,8 +1477,13 @@ class CookPredictorCard extends HTMLElement {
       this._persistIdleState();
     };
 
+    // Every control below may survive a re-render (see _morph), so each is
+    // wired once; _refreshForm creates fresh ones, which get wired here too.
+    const once = (el) => { if (!el || el.dataset.wired) return false; el.dataset.wired = "1"; return true; };
+
     // Category pill buttons — use targeted form refresh to avoid scroll jumps
     this.querySelectorAll(`button[data-action="cat"][data-slot="${idSuffix}"]`).forEach((btn) => {
+      if (!once(btn)) return;
       btn.addEventListener("click", () => {
         upd({ category: btn.dataset.val, cut: null, doneness: null, temp: this._defaultTemp(stateKey) });
         this._refreshForm(idSuffix, stateKey, opts);
@@ -1394,7 +1492,7 @@ class CookPredictorCard extends HTMLElement {
 
     // Cut dropdown — targeted refresh to show/hide doneness select
     const cutEl = this.querySelector(`#cp-cut-${idSuffix}`);
-    if (cutEl) {
+    if (once(cutEl)) {
       cutEl.addEventListener("change", () => {
         if (!_presets) return;
         const s = getS();
@@ -1416,7 +1514,7 @@ class CookPredictorCard extends HTMLElement {
     const targetEl = this.querySelector(`#cp-target-${idSuffix}`);
     const donEl = this.querySelector(`#cp-don-${idSuffix}`);
     const unit = this._tempUnit || "C";
-    if (donEl) {
+    if (once(donEl)) {
       donEl.addEventListener("change", () => {
         if (!_presets) return;
         const s = getS();
@@ -1434,7 +1532,7 @@ class CookPredictorCard extends HTMLElement {
     // Update local state on every keystroke, but only write the linked helper
     // on `change` (blur/Enter) so partial values ("5" while typing "55") aren't
     // pushed — they'd fail an input_number min/max and spam error toasts.
-    if (targetEl) {
+    if (once(targetEl)) {
       targetEl.addEventListener("input", (e) => {
         const dispVal = parseFloat(e.target.value);
         if (!isNaN(dispVal)) upd({ temp: _fromDisp(dispVal, unit) });
@@ -1492,7 +1590,7 @@ class CookPredictorCard extends HTMLElement {
     const probeMode = attrs.probe_mode || "combined";
     const probeActive = attrs.probe_active || [true];
 
-    this.innerHTML = `
+    this._html = `
       <ha-card>
         <div style="padding:20px;">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
@@ -1615,7 +1713,7 @@ class CookPredictorCard extends HTMLElement {
     const nextLabel = timerMode === "countdown" ? t("switch_to_temp") : t("switch_to_countdown");
     const combinedPresetName = this._getActivePresetName("combined");
 
-    this.innerHTML = `
+    this._html = `
       <ha-card>
         <div style="padding:20px;">
 
@@ -1745,10 +1843,15 @@ class CookPredictorCard extends HTMLElement {
         </div>
       </ha-card>`;
 
-    this.querySelector("#cp-ring-container").addEventListener("click", () => {
-      localStorage.setItem("probe_ability_timer_mode", nextMode);
-      this._render();
-    });
+    const ring = this.querySelector("#cp-ring-container");
+    ring.dataset.next = nextMode;   // re-set every render; read when clicked
+    if (!ring.dataset.wired) {
+      ring.dataset.wired = "1";
+      ring.addEventListener("click", () => {
+        localStorage.setItem("probe_ability_timer_mode", ring.dataset.next);
+        this._render();
+      });
+    }
     this._addStopConfirm(this.querySelector("#cp-stop"), () => this._callStop(), t("yes_cancel"));
   }
 
@@ -2096,7 +2199,7 @@ class CookPredictorCard extends HTMLElement {
     this._lastTileCount = shown;
     this._lastOpenCount = open;
 
-    this.innerHTML = `
+    this._html = `
       <ha-card>
         <div style="padding:20px;">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
@@ -2130,6 +2233,8 @@ class CookPredictorCard extends HTMLElement {
         isIndividual: true,
         probeIndex: i,
       });
+      if (btn.dataset.wired) return;
+      btn.dataset.wired = "1";
       btn.addEventListener("click", () => {
         const s = this._slotState(i);
         const cookName = _makeCookName(s.category, s.cut, s.doneness);
@@ -2145,7 +2250,7 @@ class CookPredictorCard extends HTMLElement {
   // ── Done ──────────────────────────────────────────────────────────────
 
   _renderDone(attrs) {
-    this.innerHTML = `
+    this._html = `
       <ha-card>
         <div style="padding:20px;">
           <div style="text-align:center;padding:24px 0;">
@@ -2207,8 +2312,13 @@ class CookPredictorCard extends HTMLElement {
   // If HA pushes a state update while the prompt is open it will be wiped
   // by the re-render — the user simply clicks Stop again.
   _addStopConfirm(btn, stopFn, confirmLabel) {
-    if (confirmLabel == null) confirmLabel = t("yes_stop");
+    // The label follows the phase (cancel while collecting, stop later), so
+    // it is stored on the button each render and read when clicked.
+    btn.dataset.confirmLabel = confirmLabel == null ? t("yes_stop") : confirmLabel;
+    if (btn.dataset.wired) return;
+    btn.dataset.wired = "1";
     btn.addEventListener("click", () => {
+      const label = btn.dataset.confirmLabel;
       this._confirmPending = true;   // block hass() re-renders while prompt is open
       const wrapper = document.createElement("div");
       wrapper.style.cssText = "margin-top:4px;";
@@ -2220,7 +2330,7 @@ class CookPredictorCard extends HTMLElement {
           <button class="cp-confirm-yes"
             style="flex:1;padding:8px;background:var(--error-color);color:white;
                    border:none;border-radius:6px;font-size:0.82em;cursor:pointer;font-weight:500;">
-            ${confirmLabel}
+            ${label}
           </button>
           <button class="cp-confirm-no"
             style="flex:1;padding:8px;background:none;color:var(--primary-text-color);

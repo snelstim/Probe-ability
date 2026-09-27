@@ -37,176 +37,15 @@ const CARD_VERSION = "0.11.5";
 
 // ─── Localisation ────────────────────────────────────────────────────────────
 //
-// Custom cards can't read Home Assistant's backend translations, so the card
-// ships its own string table.  To add a language, add an entry to I18N below
-// (copy the "en" block and translate the values) — missing keys/languages fall
-// back to English automatically.  Preset labels (cut / doneness names) are
-// localised separately in cook_presets.json, NOT here — see _displayLabel().
+// Every string lives in the integration's translations/<lang>.json, next to
+// the config flow and entity names: the card's under selector.card, the
+// preset display names under selector.preset_category / preset_cut /
+// preset_doneness (hassfest only accepts known top-level sections; a
+// selector's options map is free-form).  The card fetches them over the
+// websocket (frontend/get_translations) — Home Assistant fills keys missing
+// from a language with English, so the card needs no fallback table.
 //
 // See docs/TRANSLATIONS.md for the full guide.
-
-const I18N = {
-  en: {
-    start_cook: "Start Cook",
-    start_probe: "Start {name}",
-    cancel_cook: "Cancel Cook",
-    stop_cook: "Stop Cook",
-    cancel_probe: "Cancel {name}",
-    new_cook_probe: "New Cook ({name})",
-    stop_probe: "Stop {name}",
-    new_cook: "New Cook",
-    combined: "🔗 Combined",
-    individual_toggle: "⚡ Individual",
-    mode_combined: "Combined",
-    mode_individual: "Individual",
-    individual_badge: "Individual",
-    loading_presets: "Loading presets…",
-    select_cut: "— Select cut —",
-    select_doneness: "— Select doneness —",
-    target_temp_label: "Target temperature ({unit})",
-    target_label: "Target ({unit})",
-    no_probe_sensors: "No probe sensors available",
-    no_probe_sensors_hint: "Check that your thermometer probes are connected and visible in Home Assistant.",
-    warming_up_target: "Warming up… target",
-    collecting_data: "Collecting data ({count}/{needed})",
-    readings: "Readings: {count}/{needed}",
-    building_span: "Building data span…",
-    ready_at: "ready at {time}",
-    remaining: "remaining",
-    estimating: "estimating…",
-    tap_for_temp: "tap for temp",
-    tap_for_time: "tap for time",
-    done_at: "Done ~{eta}",
-    eta: "ETA: {eta}",
-    rate: "Rate: {rate} {unit}/min",
-    stalled: "(stalled)",
-    ambient: "Ambient",
-    internal: "Internal",
-    probe_n: "Probe {n}",
-    of_temp: "of {temp}",
-    remove_from_heat: "Remove from heat",
-    remove_from_heat_now: "Remove from heat now!",
-    carryover_full: "Carryover cooking will bring it to {temp}.",
-    pull_temp: "Pull temperature: {temp}.",
-    carryover_short: "Carryover will bring it to {temp}.",
-    pull_temp_short: "Pull temp: {temp}.",
-    stall_detected: "Temperature stall detected",
-    stall_detail: "Time shown is the last stable estimate. It will resume updating when the temperature starts rising again.",
-    stall_short: "Stall — showing last stable estimate",
-    unreachable_detected: "Target cannot be reached",
-    unreachable_detail: "The ambient temperature has dropped below the target. Increase the heat to finish the cook.",
-    unreachable_short: "Ambient below target — increase the heat",
-    target_reached: "Target reached!",
-    cook_complete: "Cook Complete!",
-    target_temp_reached: "Target temperature reached.",
-    not_started: "Not started",
-    are_you_sure: "Are you sure?",
-    yes_cancel: "Yes, cancel",
-    yes_stop: "Yes, stop",
-    yes_new_cook: "Yes, new cook",
-    keep_cooking: "Keep cooking",
-    entity_not_found: "Entity not found: {entity}",
-    err_define_entity: "Please define an entity (time_remaining sensor)",
-    switch_to_temp: "Switch to temperature view",
-    switch_to_countdown: "Switch to countdown view",
-    hours_short: "h",
-    minutes_short: "m",
-    expand: "Show details",
-    collapse: "Hide details",
-    ed_sec_general: "General",
-    ed_entity: "Time remaining entity (required)",
-    ed_ambient: "Ambient sensor (optional)",
-    ed_target_entity: "Target temperature input_number — probe 1 / combined (optional)",
-    ed_target_entity_n: "Target temperature input_number — probe {n} (optional)",
-    ed_probe_n: "Probe {n} sensor (optional)",
-    ed_entry: "Entry ID (optional, for multi-instance)",
-    ed_layout: "Probe layout",
-    layout_vertical: "Vertical — stacked",
-    layout_horizontal: "Horizontal — side by side",
-    layout_grid: "Grid — 2 columns",
-    ed_collapsible: "Collapsible tiles — tap a probe header to open or close it",
-  },
-  nl: {
-    start_cook: "Kook starten",
-    start_probe: "{name} starten",
-    cancel_cook: "Kook annuleren",
-    stop_cook: "Kook stoppen",
-    cancel_probe: "{name} annuleren",
-    new_cook_probe: "Nieuwe kook ({name})",
-    stop_probe: "{name} stoppen",
-    new_cook: "Nieuwe kook",
-    combined: "🔗 Gecombineerd",
-    individual_toggle: "⚡ Individueel",
-    mode_combined: "Gecombineerd",
-    mode_individual: "Individueel",
-    individual_badge: "Individueel",
-    loading_presets: "Presets laden…",
-    select_cut: "— Kies stuk —",
-    select_doneness: "— Kies gaarheid —",
-    target_temp_label: "Doeltemperatuur ({unit})",
-    target_label: "Doel ({unit})",
-    no_probe_sensors: "Geen probe-sensoren beschikbaar",
-    no_probe_sensors_hint: "Controleer of je thermometerprobes zijn aangesloten en zichtbaar zijn in Home Assistant.",
-    warming_up_target: "Opwarmen… doel",
-    collecting_data: "Gegevens verzamelen ({count}/{needed})",
-    readings: "Metingen: {count}/{needed}",
-    building_span: "Gegevensbereik opbouwen…",
-    ready_at: "klaar om {time}",
-    remaining: "resterend",
-    estimating: "schatten…",
-    tap_for_temp: "tik voor temp",
-    tap_for_time: "tik voor tijd",
-    done_at: "Klaar ~{eta}",
-    eta: "ETA: {eta}",
-    rate: "Snelheid: {rate} {unit}/min",
-    stalled: "(gestagneerd)",
-    ambient: "Omgeving",
-    internal: "Kern",
-    probe_n: "Probe {n}",
-    of_temp: "van {temp}",
-    remove_from_heat: "Van het vuur halen",
-    remove_from_heat_now: "Nu van het vuur halen!",
-    carryover_full: "Nagaren brengt het naar {temp}.",
-    pull_temp: "Haaltemperatuur: {temp}.",
-    carryover_short: "Nagaren brengt het naar {temp}.",
-    pull_temp_short: "Haaltemp: {temp}.",
-    stall_detected: "Temperatuurstagnatie gedetecteerd",
-    stall_detail: "De getoonde tijd is de laatste stabiele schatting. Deze wordt hervat zodra de temperatuur weer stijgt.",
-    stall_short: "Stagnatie — laatste stabiele schatting",
-    unreachable_detected: "Doel kan niet worden bereikt",
-    unreachable_detail: "De omgevingstemperatuur is onder het doel gezakt. Verhoog de warmte om de bereiding af te ronden.",
-    unreachable_short: "Omgeving onder doel — verhoog de warmte",
-    target_reached: "Doel bereikt!",
-    cook_complete: "Kook voltooid!",
-    target_temp_reached: "Doeltemperatuur bereikt.",
-    not_started: "Niet gestart",
-    are_you_sure: "Weet je het zeker?",
-    yes_cancel: "Ja, annuleren",
-    yes_stop: "Ja, stoppen",
-    yes_new_cook: "Ja, nieuwe kook",
-    keep_cooking: "Doorgaan met koken",
-    entity_not_found: "Entiteit niet gevonden: {entity}",
-    err_define_entity: "Definieer een entiteit (time_remaining-sensor)",
-    switch_to_temp: "Naar temperatuurweergave",
-    switch_to_countdown: "Naar aftelweergave",
-    hours_short: "u",
-    minutes_short: "m",
-    expand: "Details tonen",
-    collapse: "Details verbergen",
-    ed_sec_general: "Algemeen",
-    ed_entity: "Time remaining-entiteit (verplicht)",
-    ed_ambient: "Omgevingssensor (optioneel)",
-    ed_target_entity: "Doeltemperatuur-input_number — probe 1 / gecombineerd (optioneel)",
-    ed_target_entity_n: "Doeltemperatuur-input_number — probe {n} (optioneel)",
-    ed_probe_n: "Probe {n}-sensor (optioneel)",
-    ed_entry: "Entry-ID (optioneel, voor meerdere instanties)",
-    ed_layout: "Probe-indeling",
-    layout_vertical: "Verticaal — gestapeld",
-    layout_horizontal: "Horizontaal — naast elkaar",
-    layout_grid: "Raster — 2 kolommen",
-    ed_collapsible: "Inklapbare tegels — tik op een probe-kop om te openen of te sluiten",
-  },
-};
 
 // Current UI language — set from hass.language at the start of every render.
 // Module-level (not per-instance) is fine: hass.language is a single global
@@ -216,23 +55,61 @@ let _locale = "en";
 
 function _setLang(hass) {
   _locale = hass?.language || "en";
-  _lang = _locale.split("-")[0];
+  _lang = _locale;
+}
+
+// Fetched strings per language: { "card.options.start_cook": "Start Cook", … }
+const _strings = {};
+const _stringsPending = {};
+const _STRINGS_PREFIX = "component.probe_ability.selector.";
+
+// Load the strings for hass.language once; concurrent callers share the fetch.
+// A failed fetch caches an empty table so the card still renders (showing
+// keys) instead of retrying on every update.
+function _loadStrings(hass) {
+  const lang = hass?.language || "en";
+  if (_strings[lang]) return Promise.resolve(_strings[lang]);
+  if (!_stringsPending[lang]) {
+    _stringsPending[lang] = hass
+      .callWS({
+        type: "frontend/get_translations",
+        language: lang,
+        category: "selector",
+        integration: "probe_ability",
+      })
+      .then((r) => r?.resources || {})
+      .catch((err) => {
+        console.warn("Probe-ability: could not load translations", err);
+        return {};
+      })
+      .then((resources) => {
+        const table = {};
+        for (const [k, v] of Object.entries(resources)) {
+          if (k.startsWith(_STRINGS_PREFIX)) table[k.slice(_STRINGS_PREFIX.length)] = v;
+        }
+        _strings[lang] = table;
+        delete _stringsPending[lang];
+        return table;
+      });
+  }
+  return _stringsPending[lang];
 }
 
 // Translate `key`, interpolating {placeholder} tokens from `vars`.
-// Falls back to English, then to the raw key, so a missing entry is never fatal.
+// Falls back to the raw key, so a missing entry is never fatal.
 function t(key, vars) {
-  const s = (I18N[_lang] && I18N[_lang][key]) ?? I18N.en[key] ?? key;
+  const s = _strings[_lang]?.[`card.options.${key}`] ?? key;
   return vars ? s.replace(/\{(\w+)\}/g, (_, k) => (vars[k] != null ? vars[k] : `{${k}}`)) : s;
 }
 
-// Localised display label for a preset object (category / cut / doneness).
-// The English `label` stays canonical — it feeds the backend cook_name and
-// ml_predictor's lookup table (see _makeCookName), so it MUST NOT change per
-// language.  Display-only translations live in `labels` in cook_presets.json.
-function _displayLabel(obj) {
+// Localised display label for a preset object; `level` is "category", "cut"
+// or "doneness".  The English `label` in cook_presets.json stays canonical —
+// it feeds the backend cook_name and ml_predictor's lookup table (see
+// _makeCookName), so it MUST NOT change per language; translations only
+// change what is shown.
+function _displayLabel(obj, level) {
   if (!obj) return "";
-  return (obj.labels && obj.labels[_lang]) || obj.label;
+  return _strings[_lang]?.[`preset_${level}.options.${obj.id}`] || obj.label;
 }
 
 // ─── Preset data (loaded async from cook_presets.json) ───────────────────────
@@ -323,7 +200,7 @@ function _presetSelector(idSuffix, slotState, unit = "C") {
                background:${sel ? "var(--primary-color)" : "var(--card-background-color)"};
                color:${sel ? "var(--text-primary-color)" : "var(--primary-text-color)"};
                font-weight:${sel ? "600" : "400"};">
-        ${c.icon} ${_displayLabel(c)}
+        ${c.icon} ${_displayLabel(c, "category")}
       </button>`;
     })
     .join("");
@@ -336,7 +213,7 @@ function _presetSelector(idSuffix, slotState, unit = "C") {
   if (!catObj) return html;
 
   const cutOpts = catObj.cuts
-    .map((c) => `<option value="${c.id}"${c.id === cut ? " selected" : ""}>${_displayLabel(c)}</option>`)
+    .map((c) => `<option value="${c.id}"${c.id === cut ? " selected" : ""}>${_displayLabel(c, "cut")}</option>`)
     .join("");
   html += `<div style="margin-bottom:8px;">
     <select id="cp-cut-${idSuffix}" style="${selStyle}">
@@ -354,7 +231,7 @@ function _presetSelector(idSuffix, slotState, unit = "C") {
   const donOpts = cutObj.doneness
     .map(
       (d) =>
-        `<option value="${d.id}"${d.id === doneness ? " selected" : ""}>${_displayLabel(d)} (${_toDisp(d.temp, unit)}${_unitLabel(unit)})</option>`
+        `<option value="${d.id}"${d.id === doneness ? " selected" : ""}>${_displayLabel(d, "doneness")} (${_toDisp(d.temp, unit)}${_unitLabel(unit)})</option>`
     )
     .join("");
   html += `<div style="margin-bottom:8px;">
@@ -548,7 +425,8 @@ class CookPredictorCard extends HTMLElement {
       const ps = prev.states[entity];
       const pa = ps?.attributes || {};
       const helpersOrSensorsChanged =
-        this._targetHelpersChanged(prev, hass) || this._probeAvailabilityChanged(prev, hass);
+        this._targetHelpersChanged(prev, hass) || this._probeAvailabilityChanged(prev, hass) ||
+        prev.language !== hass.language;
       if (isIdle) {
         // During idle the form is driven entirely by local state, not HA
         // state; of the entity only active and the slot count matter.
@@ -953,6 +831,16 @@ class CookPredictorCard extends HTMLElement {
   _render() {
     if (!this._hass) return;
     _setLang(this._hass);
+    // First render in a language: wait for its strings (one fetch, cached).
+    if (!_strings[_lang]) {
+      if (!this._stringsWait) {
+        this._stringsWait = _loadStrings(this._hass).then(() => {
+          this._stringsWait = null;
+          this._render();
+        });
+      }
+      return;
+    }
     // A full rebuild discards any open stop-confirmation prompt.
     this._confirmPending = false;
     // Card-size hint; only the individual-mode views set it (see getCardSize).
@@ -2490,6 +2378,15 @@ class CookPredictorCardEditor extends HTMLElement {
   _updateForm() {
     if (!this._hass || !this._config) return;
     _setLang(this._hass);
+    if (!_strings[_lang]) {
+      if (!this._stringsWait) {
+        this._stringsWait = _loadStrings(this._hass).then(() => {
+          this._stringsWait = null;
+          this._updateForm();
+        });
+      }
+      return;
+    }
 
     // Create ha-form once; update its properties on subsequent calls
     let form = this.querySelector("ha-form");

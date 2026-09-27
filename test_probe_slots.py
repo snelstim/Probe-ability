@@ -116,6 +116,7 @@ _stub("homeassistant.config_entries", ConfigEntry=object)
 _stub(
     "homeassistant.const",
     UnitOfTime=_Names(), Platform=_Names(),
+    EVENT_CORE_CONFIG_UPDATE="core_config_updated",
     EVENT_HOMEASSISTANT_STARTED="homeassistant_started",
     EVENT_HOMEASSISTANT_STOP="homeassistant_stop",
 )
@@ -128,6 +129,7 @@ _stub("homeassistant.helpers.config_validation", string=str,
 _stub("homeassistant.helpers.event", async_call_later=lambda *a, **k: (lambda: None),
       async_track_state_change_event=_track_state_change)
 _stub("homeassistant.helpers.storage", Store=FakeStore)
+_stub("homeassistant.helpers.translation", async_get_translations=None)
 _stub("homeassistant.helpers.entity_platform", AddEntitiesCallback=object)
 _stub(
     "homeassistant.helpers.entity_registry",
@@ -142,6 +144,12 @@ sys.path.insert(0, os.path.join(ROOT, "custom_components"))
 import probe_ability  # noqa: E402  (runs __init__.py against the stubs)
 from probe_ability import const, sensor  # noqa: E402
 from probe_ability.predictor import CookPredictor  # noqa: E402
+from probe_ability.texts import Texts  # noqa: E402
+
+# The real English strings, as HA's translation cache would provide them
+TEXTS = Texts.from_translation_file(
+    os.path.join(os.path.dirname(__file__), "custom_components", "probe_ability", "translations", "en.json")
+)
 
 ENTRY_ID = "0123abcd"
 P1, P2, P4, AMBIENT = "sensor.p1", "sensor.p2", "sensor.p4", "sensor.ambient"
@@ -215,7 +223,7 @@ def _states(p1=47.0, p2=30.0, p4=22.0, ambient=110.0) -> dict:
 def _monitor(data: dict, states: dict):
     hass = FakeHass(states)
     entry = FakeEntry(data)
-    monitor = probe_ability.CookMonitor(hass, entry)
+    monitor = probe_ability.CookMonitor(hass, entry, TEXTS)
     hass.data.setdefault(const.DOMAIN, {})[ENTRY_ID] = monitor
     return hass, entry, monitor
 

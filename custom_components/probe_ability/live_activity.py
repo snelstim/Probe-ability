@@ -21,8 +21,10 @@ from dataclasses import dataclass
 
 try:  # package import inside Home Assistant
     from .const import DEFAULT_COOK_NAME, PROBE_MODE_INDIVIDUAL
+    from .texts import Texts
 except ImportError:  # standalone (test_live_activity.py adds the package dir to sys.path)
     from const import DEFAULT_COOK_NAME, PROBE_MODE_INDIVIDUAL  # type: ignore[no-redef]
+    from texts import Texts  # type: ignore[no-redef]
 
 TAG_PREFIX = "probe_ability"
 TAG_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -37,7 +39,6 @@ ETA_DELTA_S = 120
 ACTIVITY_MAX_AGE_S = 7 * 3600 + 50 * 60
 
 CLEAR_MESSAGE = "clear_notification"
-FALLBACK_TITLE = "Probe-ability"
 
 # Phases in which a prediction exists and a device-side countdown makes sense.
 CHRONOMETER_PHASES = ("heating", "stall", "finishing")
@@ -52,16 +53,6 @@ PHASE_STYLE: dict[str, tuple[str, str]] = {
     "done": ("mdi:check-circle", "#43A047"),
     "unreachable": ("mdi:fire-alert", "#DB4437"),
 }
-
-PHASE_LABEL: dict[str, str] = {
-    "collecting": "Collecting data",
-    "heating": "Heating",
-    "stall": "Stall",
-    "finishing": "Finishing",
-    "done": "Target reached",
-    "unreachable": "Target unreachable",
-}
-
 
 # ── Pure data ────────────────────────────────────────────────────────────────
 
@@ -129,27 +120,34 @@ def use_chronometer(state: SlotState) -> bool:
     return state.phase in CHRONOMETER_PHASES and state.eta_ts is not None
 
 
-def build_message(state: SlotState) -> str:
+def build_message(state: SlotState, texts: Texts) -> str:
     """Body text.  On the iOS lock screen the chronometer replaces this line."""
     unit = state.temp_unit
     target = format_temp(state.target_c, unit)
     if state.phase == "done":
         if state.rest_short_c is not None and state.rest_peak_c is not None:
             short = state.rest_short_c * (9 / 5 if unit == "F" else 1)
-            return (f"Rested · peaked {format_temp(state.rest_peak_c, unit)} · "
-                    f"{short:.1f}° below target {target}")
-        return f"Target reached · {target}"
+            return texts(
+                "msg_rested",
+                peak=format_temp(state.rest_peak_c, unit),
+                short=f"{short:.1f}",
+                target=target,
+            )
+        return texts("msg_target_reached", target=target)
     cur = format_temp(state.current_c, unit) if state.current_c is not None else "--"
     if state.phase == "unreachable":
-        return f"Target unreachable · raise the heat · {cur} / {target}"
-    label = PHASE_LABEL.get(state.phase, state.phase.capitalize())
-    text = f"{label} · {cur} / {target}"
+        return texts("msg_unreachable", current=cur, target=target)
+    key = f"phase_{state.phase}"
+    label = texts(key)
+    if label == key:  # a phase without a translation
+        label = state.phase.capitalize()
+    text = texts("msg_phase", phase=label, current=cur, target=target)
     if state.confidence == "low" and use_chronometer(state):
-        text += " · low confidence"
+        text += f" · {texts('low_confidence')}"
     return text
 
 
-def build_payload(state: SlotState, *, silent: bool, alert: bool = False) -> dict:
+def build_payload(state: SlotState, texts: Texts, *, silent: bool, alert: bool = False) -> dict:
     """Full ``notify.mobile_app_*`` service data for one activity.
 
     ``alert_once`` is set on every update so Android (and a paired watch)
@@ -177,7 +175,7 @@ def build_payload(state: SlotState, *, silent: bool, alert: bool = False) -> dic
     if use_chronometer(state):
         data["chronometer"] = True
         data["when"] = int(state.eta_ts)
-    return {"title": state.title, "message": build_message(state), "data": data}
+    return {"title": state.title, "message": build_message(state, texts), "data": data}
 
 
 def build_clear_payload(tag: str) -> dict:
@@ -264,18 +262,20 @@ def is_silent(prev: PushRecord | None, new: PushRecord) -> bool:
     return True
 
 
-def activity_title(cook_name: str, probe_label: str | None = None) -> str:
+def activity_title(cook_name: str, probe_label: str | None = None, *, texts: Texts) -> str:
     """Static title: the cook name (or a fallback), plus the probe label in individual mode."""
-    title = cook_name if cook_name and cook_name != DEFAULT_COOK_NAME else FALLBACK_TITLE
+    title = (
+        cook_name if cook_name and cook_name != DEFAULT_COOK_NAME else texts("default_title")
+    )
     if probe_label:
         title += f" · {probe_label}"
     return title
 
 
-def _probe_label(monitor, index: int) -> str:
+def _probe_label(monitor, index: int, texts: Texts) -> str:
     """The monitor's display name for a probe ("Green" or "Probe N")."""
     fn = getattr(monitor, "probe_label", None)
-    return fn(index) if callable(fn) else f"Probe {index + 1}"
+    return fn(index) if callable(fn) else texts("probe_n", n=index + 1)
 
 
 # ── Manager ──────────────────────────────────────────────────────────────────
@@ -297,8 +297,11 @@ class LiveActivityManager:
     (tag rollover, mode switch) reaches the phone in order.
     """
 
-    def __init__(self, hass, entry_id: str, temp_unit: str, targets: list[str], logger) -> None:
+    def __init__(
+        self, hass, entry_id: str, temp_unit: str, targets: list[str], logger, texts: Texts
+    ) -> None:
         self._hass = hass
+        self._texts = texts
         self._entry_id = entry_id
         self._temp_unit = temp_unit
         self._targets: list[str] = [t for t in targets if t]
@@ -316,6 +319,10 @@ class LiveActivityManager:
         return list(self._targets)
 
     # ── Public API ───────────────────────────────────────────────────────
+
+    def set_texts(self, texts: Texts) -> None:
+        """Use new strings (server language changed); the next refresh picks them up."""
+        self._texts = texts
 
     def set_targets(self, targets: list[str], monitor, *, now: float | None = None) -> None:
         """Apply a new target list (options flow) without reloading the entry."""
@@ -357,6 +364,7 @@ class LiveActivityManager:
                 continue
             payload = build_payload(
                 state,
+                self._texts,
                 silent=is_silent(prev, record),
                 alert=should_alert(prev, record),
             )
@@ -394,7 +402,8 @@ class LiveActivityManager:
                     tag=tag,
                     title=activity_title(
                         monitor.probe_name[i],
-                        _probe_label(monitor, i) if len(predictors) > 1 else None,
+                        _probe_label(monitor, i, self._texts) if len(predictors) > 1 else None,
+                        texts=self._texts,
                     ),
                     phase=result.phase,
                     confidence=result.confidence,
@@ -443,7 +452,7 @@ class LiveActivityManager:
         tag = make_tag(self._entry_id, "c", activity_generation(first_ts, now))
         states[tag] = SlotState(
             tag=tag,
-            title=activity_title(monitor.cook_name),
+            title=activity_title(monitor.cook_name, texts=self._texts),
             phase=phase,
             confidence=result.confidence,
             current_c=pred.current_temp,

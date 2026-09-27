@@ -55,7 +55,7 @@ async def async_setup_entry(
 # unique_id suffix per probe index (probe 0 has no suffix)
 _PROBE_SUFFIX = {0: "", 1: "_2", 2: "_3", 3: "_4"}
 # Suffix appended to the entity translation_key so each probe gets its own
-# localised name (see the "entity" section of strings.json / translations).
+# localised name (see the "entity" section of translations/en.json).
 _PROBE_KEY_SUFFIX = {0: "", 1: "_probe2", 2: "_probe3", 3: "_probe4"}
 
 # Tail of a per-probe unique_id after the entry_id: "_time_remaining", "_eta",

@@ -35,6 +35,11 @@ from live_activity import (  # noqa: E402
     use_chronometer,
 )
 from predictor import CookPredictor  # noqa: E402
+from texts import Texts  # noqa: E402
+
+_TRANSLATIONS = os.path.join(os.path.dirname(__file__), "custom_components", "probe_ability", "translations")
+EN = Texts.from_translation_file(os.path.join(_TRANSLATIONS, "en.json"))
+NL = Texts.from_translation_file(os.path.join(_TRANSLATIONS, "nl.json"))
 
 TAG_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 PASSED = 0
@@ -88,7 +93,7 @@ check("target <= start is 0", compute_progress(95, 96, 95, "heating") == 0)
 
 print("build_payload")
 for phase in ("collecting", "heating", "stall", "finishing", "done", "unreachable"):
-    p = build_payload(slot(phase=phase), silent=True)
+    p = build_payload(slot(phase=phase), EN, silent=True)
     d = p["data"]
     check(f"{phase}: required keys", all(k in d for k in ("tag", "live_update", "progress", "progress_max")))
     check(f"{phase}: live_update true", d["live_update"] is True)
@@ -100,19 +105,21 @@ for phase in ("collecting", "heating", "stall", "finishing", "done", "unreachabl
         check(f"{phase}: no chronometer", "chronometer" not in d and "when" not in d)
     check(f"{phase}: icon+colour", d["notification_icon"].startswith("mdi:") and d["notification_icon_color"].startswith("#"))
 
-p = build_payload(slot(phase="heating", eta_ts=None), silent=True)
+p = build_payload(slot(phase="heating", eta_ts=None), EN, silent=True)
 check("heating without ETA: no chronometer", "chronometer" not in p["data"])
-check("done progress 100", build_payload(slot(phase="done"), silent=False)["data"]["progress"] == 100)
-check("silent propagated", build_payload(slot(), silent=False)["data"]["silent"] is False)
-check("alert_once by default", build_payload(slot(), silent=True)["data"]["alert_once"] is True)
-check("alert re-enables buzz", build_payload(slot(phase="done"), silent=False, alert=True)["data"]["alert_once"] is False)
-check("critical_text C", build_payload(slot(), silent=True)["data"]["critical_text"] == "63.5°C")
-check("critical_text F", build_payload(slot(temp_unit="F"), silent=True)["data"]["critical_text"] == "146°F")
-check("no reading: no critical_text", "critical_text" not in build_payload(slot(current_c=None, start_c=None), silent=True)["data"])
-check("message heating", build_payload(slot(), silent=True)["message"] == "Heating · 63.5° / 95.0°")
-check("message low confidence", build_payload(slot(confidence="low"), silent=True)["message"].endswith("· low confidence"))
-check("message done", build_payload(slot(phase="done", current_c=95.2), silent=True)["message"] == "Target reached · 95.0°")
-check("message unreachable", build_payload(slot(phase="unreachable"), silent=True)["message"].startswith("Target unreachable"))
+check("done progress 100", build_payload(slot(phase="done"), EN, silent=False)["data"]["progress"] == 100)
+check("silent propagated", build_payload(slot(), EN, silent=False)["data"]["silent"] is False)
+check("alert_once by default", build_payload(slot(), EN, silent=True)["data"]["alert_once"] is True)
+check("alert re-enables buzz", build_payload(slot(phase="done"), EN, silent=False, alert=True)["data"]["alert_once"] is False)
+check("critical_text C", build_payload(slot(), EN, silent=True)["data"]["critical_text"] == "63.5°C")
+check("critical_text F", build_payload(slot(temp_unit="F"), EN, silent=True)["data"]["critical_text"] == "146°F")
+check("no reading: no critical_text", "critical_text" not in build_payload(slot(current_c=None, start_c=None), EN, silent=True)["data"])
+check("message heating", build_payload(slot(), EN, silent=True)["message"] == "Heating · 63.5° / 95.0°")
+check("message low confidence", build_payload(slot(confidence="low"), EN, silent=True)["message"].endswith("· low confidence"))
+check("message done", build_payload(slot(phase="done", current_c=95.2), EN, silent=True)["message"] == "Target reached · 95.0°")
+check("message unreachable", build_payload(slot(phase="unreachable"), EN, silent=True)["message"].startswith("Target unreachable"))
+check("message heating nl", build_payload(slot(), NL, silent=True)["message"] == "Opwarmen · 63.5° / 95.0°")
+check("title default name nl", activity_title("Cook", "Probe 2", texts=NL) == "Probe-ability · Probe 2")
 check("clear payload", build_clear_payload("t") == {"message": "clear_notification", "data": {"tag": "t"}})
 check("use_chronometer collecting false", not use_chronometer(slot(phase="collecting")))
 
@@ -159,10 +166,10 @@ check("gen at 7h49m", activity_generation(0.0, 7 * 3600 + 49 * 60) == 0)
 check("gen at 7h51m", activity_generation(0.0, 7 * 3600 + 51 * 60) == 1)
 check("gen at 16h", activity_generation(0.0, 16 * 3600) == 2)
 check("gen no readings", activity_generation(None, 1e9) == 0)
-check("title default name", activity_title("Cook") == "Probe-ability")
-check("title with probe", activity_title("Cook", "Probe 2") == "Probe-ability · Probe 2")
-check("title named probe", activity_title("Cook", "Green") == "Probe-ability · Green")
-check("title cook name", activity_title("Beef Brisket", None) == "Beef Brisket")
+check("title default name", activity_title("Cook", texts=EN) == "Probe-ability")
+check("title with probe", activity_title("Cook", "Probe 2", texts=EN) == "Probe-ability · Probe 2")
+check("title named probe", activity_title("Cook", "Green", texts=EN) == "Probe-ability · Green")
+check("title cook name", activity_title("Beef Brisket", None, texts=EN) == "Beef Brisket")
 
 # ── 6. End-to-end: simulated cook through a real CookPredictor ──────────────
 
@@ -235,7 +242,7 @@ async def end_to_end():
     log = FakeLogger()
     pred = CookPredictor(target_temp=74.0)
     mon = FakeMonitor([pred])
-    mgr = LiveActivityManager(hass, "abcdef12-entry", "C", ["mobile_app_phone"], log)
+    mgr = LiveActivityManager(hass, "abcdef12-entry", "C", ["mobile_app_phone"], log, EN)
     readings, elapsed = simulate(mgr, hass, mon, pred)
     await hass.drain()
     pushes = [c for c in hass.calls if c[1].get("message") != "clear_notification"]
@@ -270,7 +277,7 @@ async def manager_behaviour():
     log = FakeLogger()
     p0, p1 = CookPredictor(target_temp=60.0), CookPredictor(target_temp=55.0)
     mon = FakeMonitor([p0, p1], names=["Steak", "Steak"], mode="combined")
-    mgr = LiveActivityManager(hass, "deadbeef-x", "F", ["mobile_app_good", "mobile_app_missing"], log)
+    mgr = LiveActivityManager(hass, "deadbeef-x", "F", ["mobile_app_good", "mobile_app_missing"], log, EN)
 
     mgr.refresh(mon, force=True, now=0.0)
     await hass.drain()
@@ -322,7 +329,7 @@ async def manager_behaviour():
 
     # generation rollover
     hass2 = FakeHass({"mobile_app_good"})
-    mgr2 = LiveActivityManager(hass2, "cafebabe-x", "C", ["mobile_app_good"], FakeLogger())
+    mgr2 = LiveActivityManager(hass2, "cafebabe-x", "C", ["mobile_app_good"], FakeLogger(), EN)
     pr = CookPredictor(target_temp=95.0)
     mon2 = FakeMonitor([pr], names=["Brisket"])
     pr.add_reading(0.0, 5.0, 110.0)
@@ -338,14 +345,14 @@ async def manager_behaviour():
 def rest_message() -> None:
     """A rest that lands short must not read as 'Target reached' on the phone."""
     from live_activity import build_message  # noqa: PLC0415
-    short = build_message(slot(phase="done", target_c=82.0, rest_peak_c=78.6, rest_short_c=3.4))
+    short = build_message(slot(phase="done", target_c=82.0, rest_peak_c=78.6, rest_short_c=3.4), EN)
     check("short rest: says rested", short.startswith("Rested · peaked"), short)
     check("short rest: shortfall in C", "3.4° below target" in short, short)
-    short_f = build_message(slot(phase="done", target_c=82.0, rest_peak_c=78.6, rest_short_c=3.4, temp_unit="F"))
+    short_f = build_message(slot(phase="done", target_c=82.0, rest_peak_c=78.6, rest_short_c=3.4, temp_unit="F"), EN)
     check("short rest: shortfall converted to F", "6.1° below target" in short_f, short_f)
-    check("no rest: target reached", build_message(slot(phase="done", target_c=82.0)).startswith("Target reached"))
+    check("no rest: target reached", build_message(slot(phase="done", target_c=82.0), EN).startswith("Target reached"))
     check("rest that made target: target reached",
-          build_message(slot(phase="done", target_c=82.0, rest_peak_c=82.1)).startswith("Target reached"))
+          build_message(slot(phase="done", target_c=82.0, rest_peak_c=82.1), EN).startswith("Target reached"))
 
 
 async def main():

@@ -16,12 +16,18 @@ import voluptuous as vol
 
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, EVENT_HOMEASSISTANT_STOP, Platform
+from homeassistant.const import (
+    EVENT_CORE_CONFIG_UPDATE,
+    EVENT_HOMEASSISTANT_STARTED,
+    EVENT_HOMEASSISTANT_STOP,
+    Platform,
+)
 from homeassistant.core import Event, HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 from homeassistant.helpers.storage import Store
+from homeassistant.helpers.translation import async_get_translations
 
 from .const import (
     ATTR_COOK_NAME,
@@ -52,6 +58,7 @@ from .const import (
 )
 from .live_activity import LiveActivityManager
 from .predictor import CookPredictor
+from .texts import Texts
 
 
 def _to_celsius(value: float, unit: str) -> float:
@@ -85,10 +92,26 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     return True
 
 
+async def _async_load_texts(hass: HomeAssistant) -> Texts:
+    """Backend strings in the server language (HA fills gaps from English)."""
+    resources = await async_get_translations(
+        hass, hass.config.language, "selector", {DOMAIN}
+    )
+    return Texts.from_resources(resources, DOMAIN)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Probe-ability from a config entry."""
-    monitor = CookMonitor(hass, entry)
+    monitor = CookMonitor(hass, entry, await _async_load_texts(hass))
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = monitor
+
+    # Follow a change of the server language (Settings → System → General)
+    async def _async_core_config_updated(_event: Event) -> None:
+        monitor.set_texts(await _async_load_texts(hass))
+
+    entry.async_on_unload(
+        hass.bus.async_listen(EVENT_CORE_CONFIG_UPDATE, _async_core_config_updated)
+    )
 
     await monitor.async_load()
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -248,9 +271,11 @@ class CookMonitor:
                      doneness levels), each with its own target and timer.
     """
 
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry, texts: Texts) -> None:
         self.hass = hass
         self.entry = entry
+        # User-facing backend strings (notifications, Live Activities, "Probe N")
+        self.texts = texts
 
         # Determine how many probes are wired up in this config entry
         probe_count = self._probe_count()
@@ -281,7 +306,13 @@ class CookMonitor:
             display_unit(entry.data),
             list(entry.options.get(CONF_LIVE_ACTIVITY_TARGETS, [])),
             _LOGGER,
+            texts,
         )
+
+    def set_texts(self, texts: Texts) -> None:
+        """Switch to strings in a new server language."""
+        self.texts = texts
+        self.live_activity.set_texts(texts)
 
     # ── Public properties ────────────────────────────────────────────────
 
@@ -360,7 +391,7 @@ class CookMonitor:
         labels = self.probe_labels
         if index < len(labels) and labels[index]:
             return labels[index]
-        return f"Probe {index + 1}"
+        return self.texts("probe_n", n=index + 1)
 
     def _sensor_recently_valid(self, state) -> bool:
         """True if the sensor transitioned to its current (bad) state recently.
@@ -475,10 +506,9 @@ class CookMonitor:
                 "persistent_notification",
                 "create",
                 {
-                    "title": "BBQ Cook Auto-Stopped",
-                    "message": (
-                        f"Cook \"{self.cook_name}\" was automatically stopped because "
-                        f"all probes ({labels}) have been disconnected."
+                    "title": self.texts("auto_stop_title"),
+                    "message": self.texts(
+                        "auto_stop_message", cook=self.cook_name, probes=labels
                     ),
                     "notification_id": f"probe_ability_auto_stop_{self.entry.entry_id}",
                 },

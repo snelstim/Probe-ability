@@ -91,6 +91,9 @@ _CUT_LOOKUP: dict[str, tuple[int, int, int, int]] = {
     "thigh":      (5, 1, 0, _CUT_ENC["thigh"]),
     "whole":      (5, 1, 0, _CUT_ENC["whole"]),
     "leg_lamb":   (2, 4, 5, _CUT_ENC["leg_lamb"]),
+    # Lamb rump: no lamb-rump rows in the training data — lamb codes with the
+    # rump/steak cut codes, the same reuse pattern as duck_breast above.
+    "rump_lamb":  (2, 4, 7, _CUT_ENC["rump"]),
     "fillet":     (1, 7, 6, _CUT_ENC["fillet"]),
     "other":      (3, 5, 4, _CUT_ENC["other"]),
 }
@@ -157,6 +160,11 @@ _COOK_NAME_MAP: dict[str, tuple[int, int, int, int, int]] = {
     "Lamb Leg Medium Rare":             _encode("leg_lamb",    "medium_rare"),
     "Lamb Leg Medium":                  _encode("leg_lamb",    "medium"),
     "Lamb Leg Well Done":               _encode("leg_lamb",    "well_done"),
+    # Lamb — Rump
+    "Lamb Rump Rare":                   _encode("rump_lamb",   "rare"),
+    "Lamb Rump Medium Rare":            _encode("rump_lamb",   "medium_rare"),
+    "Lamb Rump Medium":                 _encode("rump_lamb",   "medium"),
+    "Lamb Rump Well Done":              _encode("rump_lamb",   "well_done"),
     # Lamb — Rack / Ribs
     "Lamb Rack / Ribs Rare":            _encode("rib_rack",    "rare"),
     "Lamb Rack / Ribs Medium Rare":     _encode("rib_rack",    "medium_rare"),
@@ -189,6 +197,7 @@ _CUT_NAME_MAP: dict[str, tuple[str, tuple[tuple[str, float], ...]]] = {
     "Poultry Thigh / Leg":      ("thigh", (('well_done', 82.0),)),
     "Poultry Whole Bird":       ("whole", (('well_done', 82.0),)),
     "Lamb Leg":                 ("leg_lamb", (('rare', 52.0), ('medium_rare', 57.0), ('medium', 63.0), ('well_done', 71.0))),
+    "Lamb Rump":                ("rump_lamb", (('rare', 52.0), ('medium_rare', 57.0), ('medium', 63.0), ('well_done', 71.0))),
     "Lamb Rack / Ribs":         ("rib_rack", (('rare', 52.0), ('medium_rare', 57.0), ('medium', 63.0))),
     "Lamb Shoulder":            ("shoulder", (('fall_apart', 85.0),)),
     "Other Fish / Salmon":      ("fillet", (('medium_rare', 52.0), ('medium', 60.0))),

@@ -160,6 +160,17 @@
           ]
         },
         {
+          "id": "rump_lamb",
+          "label": "Rump",
+          "labels": { "nl": "Rump" },
+          "doneness": [
+            { "id": "rare",        "label": "Rare",        "labels": { "nl": "Rood" },        "temp": 52 },
+            { "id": "medium_rare", "label": "Medium Rare", "labels": { "nl": "Medium rare" }, "temp": 57 },
+            { "id": "medium",      "label": "Medium",      "labels": { "nl": "Medium" },      "temp": 63 },
+            { "id": "well_done",   "label": "Well Done",   "labels": { "nl": "Doorbakken" },  "temp": 71 }
+          ]
+        },
+        {
           "id": "rib_rack",
           "label": "Rack / Ribs",
           "labels": { "nl": "Rack / Ribben" },

@@ -183,6 +183,38 @@ def check_rest_and_pull() -> None:
     print(f"All {checks} checks passed.")
 
 
+def check_smoothing_tracks_clock() -> None:
+    """The EMA must age the previous estimate before blending.
+
+    Feed a model that is *exactly* right at every reading.  The displayed
+    value may lag while the EMA warms up, but must not settle at a steady
+    offset behind the truth (the old smoother sat ~2.8 min pessimistic on
+    every cook — invisible on a brisket, the whole endgame on a 25 min lamb).
+    """
+    checks = 0
+
+    def ok(cond, what):
+        nonlocal checks
+        assert cond, what
+        checks += 1
+
+    t_fin = 3600.0
+    p = CookPredictor(target_temp=74.0)
+    p._ml_estimate = lambda: max(0.0, t_fin - p.readings[-1][0])  # perfect oracle
+    errs = []
+    for i in range(0, 100):
+        now = i * 30.0
+        p.add_reading(now, 20.0 + 50.0 * now / t_fin, 180.0)
+        r = p.predict()
+        if r.time_remaining_seconds is not None and now < t_fin - 300:
+            errs.append(r.time_remaining_seconds - (t_fin - now))
+    ok(len(errs) > 30, "oracle cook produced predictions")
+    settled = errs[len(errs) // 2:]
+    ok(max(abs(e) for e in settled) < 15.0, f"smoothed value tracks a perfect oracle (max offset {max(abs(e) for e in settled):.0f}s)")
+    ok(min(settled) > -15.0, "no systematic optimism either")
+    print(f"All {checks} checks passed.")
+
+
 def check_names_and_readings() -> None:
     """Cook-name resolution (full / cut / category / fallback), inline-map parity with
     cook_presets.json, training-parity fallback, and the reading plausibility filter."""
@@ -259,3 +291,6 @@ if __name__ == "__main__":
 
     print("\n━━━ TEST 5: cook-name resolution, preset parity, reading filter (asserts) ━━━\n")
     check_names_and_readings()
+
+    print("\n━━━ TEST 6: EMA ages the previous estimate (asserts) ━━━\n")
+    check_smoothing_tracks_clock()

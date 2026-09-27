@@ -515,8 +515,19 @@ class CookPredictor:
             and self.readings[-1][0] - self._last_stable_ts > self._stale_max_seconds
         ):
             return new_value
+        # Age the previous estimate by the time that has passed since it was
+        # made.  Without this the EMA blends a fresh remaining-time against a
+        # value that is already stale by one reading interval, and settles at
+        # a steady lag of (1 - alpha) / alpha readings behind the truth
+        # (~2.8 min at alpha 0.15 / 30 s readings) — invisible on an 8 h
+        # brisket, the whole endgame error on a 25 min lamb.
+        prev = self._last_stable_remaining
+        if self._last_stable_ts is not None and self.readings:
+            prev -= self.readings[-1][0] - self._last_stable_ts
+        if prev <= 0:
+            return new_value
         alpha = self._adaptive_alpha()
-        return alpha * new_value + (1 - alpha) * self._last_stable_remaining
+        return alpha * new_value + (1 - alpha) * prev
 
     def _done_message(self) -> str:
         if self._done_via_rest and self._rest_peak is not None:

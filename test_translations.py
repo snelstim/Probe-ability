@@ -148,6 +148,13 @@ for lang, data in languages.items():
 print("coverage")
 card = options(en, "card")
 used = set(re.findall(r"\bt\(\s*\"(\w+)\"", card_src)) | set(re.findall(r"tkey:\s*\"(\w+)\"", card_src))
+# Keys the card builds at runtime, e.g. t(`mode_${probeMode}`): the prefix and
+# every value it can take.  A new dynamic key fails below until it is listed here.
+DYNAMIC_KEYS = {"mode_": ("combined", "individual")}
+dynamic = set(re.findall(r"\bt\(\s*`(\w+)\$\{", card_src))
+check("card: every runtime-built key prefix is known", dynamic <= set(DYNAMIC_KEYS),
+      ", ".join(sorted(dynamic - set(DYNAMIC_KEYS))))
+used |= {prefix + value for prefix, values in DYNAMIC_KEYS.items() for value in values}
 check(f"card: {len(used)} used keys all in selector.card", used <= set(card),
       ", ".join(sorted(used - set(card))))
 

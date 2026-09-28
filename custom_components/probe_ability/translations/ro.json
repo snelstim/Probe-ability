@@ -1,0 +1,292 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configurează Probe-ability",
+        "description": "Selectează senzorii de temperatură folosiți pentru predicțiile de gătire.",
+        "data": {
+          "internal_sensor": "Temperatura interioară (a cărnii) — sonda 1",
+          "ambient_sensor": "Temperatura ambiantă (cuptor/afumătoare)",
+          "internal_sensor_2": "Temperatura interioară — sonda 2 (opțional)",
+          "internal_sensor_3": "Temperatura interioară — sonda 3 (opțional)",
+          "internal_sensor_4": "Temperatura interioară — sonda 4 (opțional)",
+          "probe_name": "Numele sondei 1 (opțional, ex. Verde)",
+          "probe_name_2": "Numele sondei 2 (opțional)",
+          "probe_name_3": "Numele sondei 3 (opțional)",
+          "probe_name_4": "Numele sondei 4 (opțional)",
+          "temp_unit": "Unitate de temperatură",
+          "export_cook_data": "Exportă local datele de gătire (pentru reantrenare)",
+          "share_cook_data": "Partajează date de gătire anonimizate pentru a îmbunătăți modelul"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigurează Probe-ability",
+        "description": "Actualizează senzorii sau opțiunile de partajare a datelor pentru această instanță.",
+        "data": {
+          "internal_sensor": "Temperatura interioară (a cărnii) — sonda 1",
+          "ambient_sensor": "Temperatura ambiantă (cuptor/afumătoare)",
+          "internal_sensor_2": "Temperatura interioară — sonda 2 (opțional)",
+          "internal_sensor_3": "Temperatura interioară — sonda 3 (opțional)",
+          "internal_sensor_4": "Temperatura interioară — sonda 4 (opțional)",
+          "probe_name": "Numele sondei 1 (opțional, ex. Verde)",
+          "probe_name_2": "Numele sondei 2 (opțional)",
+          "probe_name_3": "Numele sondei 3 (opțional)",
+          "probe_name_4": "Numele sondei 4 (opțional)",
+          "temp_unit": "Unitate de temperatură",
+          "export_cook_data": "Exportă local datele de gătire (pentru reantrenare)",
+          "share_cook_data": "Partajează date de gătire anonimizate pentru a îmbunătăți modelul"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "Acest senzor interior este deja configurat.",
+      "reconfigure_successful": "Configurația a fost actualizată cu succes."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Live Activities (aplicația Companion)",
+        "description": "Afișează o Live Activity pe telefon cât timp rulează o gătire: temperatura curentă, bara de progres și o numărătoare inversă până la finalizarea estimată. Necesită aplicația Home Assistant Companion pe iOS 17.2+ sau Android 16+ și Home Assistant 2026.7 sau mai nou pentru iOS.{ha_version_note}",
+        "data": {
+          "live_activity_targets": "Dispozitive (servicii notify.mobile_app_…)"
+        },
+        "data_description": {
+          "live_activity_targets": "O Live Activity pentru fiecare dispozitiv selectat. Lasă gol pentru a dezactiva."
+        }
+      }
+    }
+  },
+  "selector": {
+    "temp_unit": {
+      "options": {
+        "c": "Celsius (°C)",
+        "f": "Fahrenheit (°F)"
+      }
+    },
+    "card": {
+      "options": {
+        "start_cook": "Începe gătirea",
+        "start_probe": "Pornește {name}",
+        "cancel_cook": "Anulează gătirea",
+        "stop_cook": "Oprește gătirea",
+        "cancel_probe": "Anulează {name}",
+        "new_cook_probe": "Gătire nouă ({name})",
+        "stop_probe": "Oprește {name}",
+        "new_cook": "Gătire nouă",
+        "combined": "🔗 Combinat",
+        "individual_toggle": "⚡ Individual",
+        "mode_combined": "Combinat",
+        "mode_individual": "Individual",
+        "individual_badge": "Individual",
+        "loading_presets": "Se încarcă presetările…",
+        "select_cut": "— Alege bucata —",
+        "select_doneness": "— Alege gradul de gătire —",
+        "target_temp_label": "Temperatura țintă ({unit})",
+        "target_label": "Țintă ({unit})",
+        "no_probe_sensors": "Niciun senzor de sondă disponibil",
+        "no_probe_sensors_hint": "Verifică dacă sondele termometrului sunt conectate și vizibile în Home Assistant.",
+        "warming_up_target": "Se încălzește… țintă",
+        "collecting_data": "Se colectează date ({count}/{needed})",
+        "readings": "Citiri: {count}/{needed}",
+        "building_span": "Se acumulează date…",
+        "ready_at": "gata la {time}",
+        "remaining": "rămas",
+        "estimating": "se estimează…",
+        "tap_for_temp": "atinge pentru temp.",
+        "tap_for_time": "atinge pentru timp",
+        "done_at": "Gata ~{eta}",
+        "eta": "Estimat: {eta}",
+        "rate": "Ritm: {rate} {unit}/min",
+        "stalled": "(stagnare)",
+        "ambient": "Ambiant",
+        "internal": "Interior",
+        "probe_n": "Sonda {n}",
+        "of_temp": "din {temp}",
+        "remove_from_heat": "Ia de pe foc",
+        "remove_from_heat_now": "Ia de pe foc acum!",
+        "carryover_full": "Gătirea reziduală o va aduce la {temp}.",
+        "pull_temp": "Temperatura de scoatere: {temp}.",
+        "carryover_short": "Gătirea reziduală o duce la {temp}.",
+        "pull_temp_short": "Temp. de scoatere: {temp}.",
+        "stall_detected": "Stagnare a temperaturii detectată",
+        "stall_detail": "Timpul afișat este ultima estimare stabilă. Se va actualiza din nou când temperatura începe să crească.",
+        "stall_short": "Stagnare — ultima estimare stabilă",
+        "unreachable_detected": "Ținta nu poate fi atinsă",
+        "unreachable_detail": "Temperatura ambiantă a scăzut sub țintă. Mărește focul pentru a termina gătirea.",
+        "unreachable_short": "Ambiant sub țintă — mărește focul",
+        "target_reached": "Țintă atinsă!",
+        "cook_complete": "Gătire finalizată!",
+        "target_temp_reached": "Temperatura țintă a fost atinsă.",
+        "not_started": "Nepornit",
+        "are_you_sure": "Ești sigur?",
+        "yes_cancel": "Da, anulează",
+        "yes_stop": "Da, oprește",
+        "yes_new_cook": "Da, gătire nouă",
+        "keep_cooking": "Continuă gătirea",
+        "entity_not_found": "Entitate negăsită: {entity}",
+        "err_define_entity": "Definește o entitate (senzorul time_remaining)",
+        "switch_to_temp": "Comută la afișarea temperaturii",
+        "switch_to_countdown": "Comută la numărătoarea inversă",
+        "hours_short": "h",
+        "minutes_short": "m",
+        "expand": "Arată detaliile",
+        "collapse": "Ascunde detaliile",
+        "ed_sec_general": "General",
+        "ed_entity": "Entitatea timp rămas (obligatoriu)",
+        "ed_ambient": "Senzor ambiant (opțional)",
+        "ed_target_entity": "input_number pentru temperatura țintă — sonda 1 / combinat (opțional)",
+        "ed_target_entity_n": "input_number pentru temperatura țintă — sonda {n} (opțional)",
+        "ed_probe_n": "Senzorul sondei {n} (opțional)",
+        "ed_entry": "ID intrare (opțional, pentru mai multe instanțe)",
+        "ed_layout": "Aranjarea sondelor",
+        "layout_vertical": "Vertical — una sub alta",
+        "layout_horizontal": "Orizontal — una lângă alta",
+        "layout_grid": "Grilă — 2 coloane",
+        "ed_collapsible": "Casete pliabile — atinge antetul unei sonde pentru a o deschide sau închide"
+      }
+    },
+    "preset_category": {
+      "options": {
+        "beef": "Vită",
+        "pork": "Porc",
+        "poultry": "Pasăre",
+        "lamb": "Miel",
+        "other": "Altele"
+      }
+    },
+    "preset_cut": {
+      "options": {
+        "sirloin": "Vrăbioară (sirloin)",
+        "rib_eye": "Antricot (rib eye)",
+        "flank": "Fleică (flank)",
+        "brisket": "Piept de vită (brisket)",
+        "burger": "Burger",
+        "roast": "Friptură la cuptor",
+        "loin": "Mușchi / cotlet",
+        "shoulder": "Spată",
+        "belly": "Piept de porc (burtă)",
+        "rib_pork": "Coaste",
+        "breast": "Piept de pui",
+        "duck_breast": "Piept de rață",
+        "thigh": "Pulpă",
+        "whole": "Pasăre întreagă",
+        "leg_lamb": "Pulpă",
+        "rump_lamb": "Crupă",
+        "rib_rack": "Cotlete / coaste",
+        "fillet": "Pește / somon",
+        "other": "Altele"
+      }
+    },
+    "preset_doneness": {
+      "options": {
+        "rare": "În sânge",
+        "medium_rare": "Mediu în sânge",
+        "medium": "Mediu",
+        "medium_well": "Mediu spre bine făcut",
+        "well_done": "Bine făcut",
+        "fall_apart": "Se desprinde de pe os",
+        "pulled": "Destrămat (pulled)"
+      }
+    },
+    "backend": {
+      "options": {
+        "probe_n": "Sonda {n}",
+        "default_title": "Probe-ability",
+        "phase_collecting": "Colectare date",
+        "phase_heating": "Încălzire",
+        "phase_stall": "Stagnare",
+        "phase_finishing": "Finalizare",
+        "msg_phase": "{phase} · {current} / {target}",
+        "msg_target_reached": "Țintă atinsă · {target}",
+        "msg_rested": "Odihnită · vârf {peak} · cu {short}° sub ținta {target}",
+        "msg_unreachable": "Țintă de neatins · mărește focul · {current} / {target}",
+        "low_confidence": "încredere scăzută",
+        "auto_stop_title": "Gătire BBQ oprită automat",
+        "auto_stop_message": "Gătirea „{cook}” a fost oprită automat deoarece toate sondele ({probes}) au fost deconectate."
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "time_remaining": { "name": "Timp rămas" },
+      "time_remaining_probe2": { "name": "Timp rămas (sonda 2)" },
+      "time_remaining_probe3": { "name": "Timp rămas (sonda 3)" },
+      "time_remaining_probe4": { "name": "Timp rămas (sonda 4)" },
+      "estimated_completion": { "name": "Finalizare estimată" },
+      "estimated_completion_probe2": { "name": "Finalizare estimată (sonda 2)" },
+      "estimated_completion_probe3": { "name": "Finalizare estimată (sonda 3)" },
+      "estimated_completion_probe4": { "name": "Finalizare estimată (sonda 4)" }
+    }
+  },
+  "services": {
+    "start_cook": {
+      "name": "Pornește gătirea",
+      "description": "Pornește o nouă sesiune de gătire.",
+      "fields": {
+        "entry_id": {
+          "name": "ID intrare",
+          "description": "ID-ul intrării de configurare (opțional dacă există o singură instanță)."
+        },
+        "target_temp": {
+          "name": "Temperatura țintă",
+          "description": "Temperatura interioară țintă în °C."
+        },
+        "probe_mode": {
+          "name": "Mod sonde",
+          "description": "combined = toate sondele împart aceeași gătire, individual = fiecare sondă este independentă."
+        },
+        "probe_index": {
+          "name": "Index sondă",
+          "description": "Ce sondă se pornește: numărul ei minus 1 (0–3), deci sonda 4 este 3 chiar dacă sondele 2 și 3 nu sunt folosite. Folosit doar în modul individual."
+        }
+      }
+    },
+    "stop_cook": {
+      "name": "Oprește gătirea",
+      "description": "Oprește o gătire și șterge citirile.",
+      "fields": {
+        "entry_id": {
+          "name": "ID intrare",
+          "description": "ID-ul intrării de configurare (opțional dacă există o singură instanță)."
+        },
+        "probe_index": {
+          "name": "Index sondă",
+          "description": "Ce sondă se oprește: numărul ei minus 1 (0–3). Omite pentru a opri toate sondele."
+        }
+      }
+    },
+    "set_target": {
+      "name": "Setează temperatura țintă",
+      "description": "Actualizează temperatura țintă pentru o gătire activă.",
+      "fields": {
+        "entry_id": {
+          "name": "ID intrare",
+          "description": "ID-ul intrării de configurare (opțional dacă există o singură instanță)."
+        },
+        "target_temp": {
+          "name": "Temperatura țintă",
+          "description": "Noua temperatură interioară țintă în °C."
+        },
+        "probe_index": {
+          "name": "Index sondă",
+          "description": "Ce sondă se actualizează: numărul ei minus 1 (0–3). Omite pentru a actualiza toate sondele."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "ambient_unavailable": {
+      "message": "Nu se poate porni gătirea: senzorul ambiant nu este disponibil"
+    },
+    "probe_unavailable": {
+      "message": "Nu se poate porni gătirea: senzorul {probe} ({sensor_id}) nu este disponibil"
+    },
+    "probe_not_configured": {
+      "message": "Nu se poate porni gătirea: {probe} nu este configurată în această instanță Probe-ability"
+    },
+    "no_probes_available": {
+      "message": "Nu se poate porni gătirea: niciun senzor de sondă nu este disponibil momentan"
+    }
+  }
+}

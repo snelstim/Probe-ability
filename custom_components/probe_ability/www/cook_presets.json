@@ -28,6 +28,17 @@
           ]
         },
         {
+          "id": "flank",
+          "label": "Flank",
+          "doneness": [
+            { "id": "rare",        "label": "Rare",        "temp": 50 },
+            { "id": "medium_rare", "label": "Medium Rare", "temp": 54 },
+            { "id": "medium",      "label": "Medium",      "temp": 60 },
+            { "id": "medium_well", "label": "Medium Well", "temp": 65 },
+            { "id": "well_done",   "label": "Well Done",   "temp": 71 }
+          ]
+        },
+        {
           "id": "brisket",
           "label": "Brisket",
           "doneness": [

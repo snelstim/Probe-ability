@@ -159,6 +159,7 @@
       "options": {
         "sirloin": "Sirloin",
         "rib_eye": "Rib Eye",
+        "flank": "Flank",
         "brisket": "Brisket",
         "burger": "Burger",
         "roast": "Roast",

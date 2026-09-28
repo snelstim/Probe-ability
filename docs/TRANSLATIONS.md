@@ -8,21 +8,57 @@ Activity text and the auto-stop notification.
 English (`en.json`) is the source of truth. Home Assistant fills any key missing from another
 language with its English text, so a partial translation is safe.
 
-## Adding a language
+[![Translation status](https://hosted.weblate.org/widget/probe-ability/svg-badge.svg)](https://hosted.weblate.org/engage/probe-ability/)
 
-1. Copy the English file, naming the copy after your
-   [HA language code](https://www.home-assistant.io/integrations/frontend/#change-the-language)
-   exactly as Home Assistant spells it (`de`, `fr`, `nl`, `pt-BR`, `zh-Hans`, …):
+## Contributing a translation
 
-   ```
-   cp custom_components/probe_ability/translations/en.json \
-      custom_components/probe_ability/translations/xx.json
-   ```
+Translations are managed on **[Hosted Weblate](https://hosted.weblate.org/engage/probe-ability/)**.
+You can add a new language, fix a string or fill gaps in an existing language right in the
+browser, with no git or JSON editing. Sign in, pick a language (or **Start new translation**) and
+translate. Anything you leave out simply shows in English.
 
-2. Translate every **value**. Never change a key.
-3. Run `python3 test_translations.py` (see [Verifying](#verifying-a-translation)).
+Weblate collects the changes and opens a pull request here. The **Translations** check runs on
+it, and the maintainer merges it like any other PR.
 
-No code changes are needed. `nl.json` is a complete reference translation.
+Tips:
+
+- Read the **Explanation** Weblate shows next to a string when there is one. Short UI labels like
+  `remaining` or `tap_for_temp` are easiest to get right with the card in front of you.
+- Weblate refuses to save a string whose `{placeholders}` don't match English (see
+  [Placeholders](#placeholders)).
+- Questions about a string? Use the comment box in Weblate or open an issue.
+
+> **Please don't open pull requests that edit `translations/<lang>.json` for languages other than
+> English.** Weblate owns those files, and a direct edit conflicts with its next pull request. If
+> you'd rather work offline, download the file from Weblate, then upload it back there.
+
+## How it works (maintainers)
+
+- **English lives in git.** Edit `en.json` in a normal commit. A GitHub webhook tells Weblate to
+  pull the change.
+- **New English key:** it appears as untranslated in every language, and shows in English until
+  someone translates it. CI keeps passing and lists the gap as a warning.
+- **Reworded English string:** Weblate marks existing translations **Needs editing**, so they get
+  revisited.
+- **Removed English key:** Weblate's *Cleanup translation files* add-on removes it from the other
+  languages in its next pull request. CI warns about leftovers until then.
+- **Adding a preset:** add it to `cook_presets.json` and its English name to `en.json`
+  (see [Preset names](#preset-names-and-the-canonical-label)). Weblate picks it up from there.
+- **CI** (`.github/workflows/translations.yml`) runs `python3 test_translations.py` on every
+  push and PR. It fails on real problems (a changed `{placeholder}`, an empty string, leading or
+  trailing spaces, HTML) and prints warnings plus a completeness table for untranslated keys.
+- **Language codes** follow Home Assistant (`pt-BR`, `zh-Hans`). Weblate is set to the hyphenated
+  BCP style, so it creates files with the right names.
+
+### Languages
+
+For live completeness, see the badge above or the Weblate project page.
+
+| Language | Notes |
+|----------|-------|
+| English (`en`) | Source |
+| Dutch (`nl`) | — |
+| Romanian (`ro`) | Machine-assisted. Review by a native speaker welcome |
 
 ### Placeholders
 
@@ -56,8 +92,8 @@ sends to the backend from these English labels (`_makeCookName`), and `ml_predic
 change what's shown, so stored cook names, ML features and shared data always stay English.
 
 To add a preset: add it to `cook_presets.json` with an `id` and English `label`, then add
-`"<id>": "<name>"` under the matching `selector.preset_*` section in **every** language file.
-In `en.json` the name must equal the `label`.
+`"<id>": "<name>"` under the matching `selector.preset_*` section of `en.json`. The name must equal
+the `label`. Translators then see the new name in Weblate.
 
 ### Language used
 
@@ -68,9 +104,10 @@ In `en.json` the name must equal the `label`.
 
 ## Verifying a translation
 
-1. `python3 test_translations.py` checks that every language has the same keys and placeholders
-   as English, that values pass hassfest's rules (no leading/trailing spaces, HTML or URLs), and
-   that every string the card, presets and backend ask for exists.
+1. `python3 test_translations.py` checks that placeholders match English, that values pass
+   hassfest's rules (no empty strings, leading/trailing spaces, HTML or URLs), and that every string the card,
+   presets and backend ask for exists. It warns about untranslated keys, and about keys English
+   no longer has, then prints a completeness table.
 2. Set your HA user's language and reload the integration.
 3. Add or reconfigure the integration and check the dialog, the temperature-unit dropdown and the
    service descriptions under Developer Tools → Actions. Open **⋮ → Configure** on the integration

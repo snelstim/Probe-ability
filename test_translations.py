@@ -5,15 +5,21 @@ Run standalone — no Home Assistant required:
 
     python3 test_translations.py
 
-Checks that every language mirrors en.json (keys and {placeholders}; Home
-Assistant silently drops a translated string whose placeholders differ from
-English), that values pass hassfest's rules, and that every string the card,
-the presets and the Python code ask for actually exists.
+Checks that every language's {placeholders} match en.json (Home Assistant
+drops a translated string whose placeholders differ from English), that values
+pass hassfest's rules, and that every string the card, the presets and the
+Python code ask for actually exists.
+
+Missing keys in a translation are only a warning — Home Assistant shows the
+English text for them — so adding an English string never breaks CI for the
+other languages.  The completeness table at the end shows what is left to
+translate; in GitHub Actions it is also written to the job summary.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import re
 import string
 import sys
@@ -31,6 +37,7 @@ URL_RE = re.compile(r"\w+://")
 
 PASSED = 0
 FAILED = 0
+WARNINGS: list[str] = []
 
 
 def check(name: str, ok: bool, detail: str = "") -> None:
@@ -41,6 +48,11 @@ def check(name: str, ok: bool, detail: str = "") -> None:
     else:
         FAILED += 1
         print(f"  FAIL {name}" + (f": {detail}" if detail else ""))
+
+
+def warn(message: str) -> None:
+    WARNINGS.append(message)
+    print(f"  warn {message}")
 
 
 def flatten(tree: dict, prefix: str = "") -> dict[str, str]:
@@ -81,15 +93,21 @@ check("the card has no string table of its own", "const I18N" not in card_src)
 
 # ── 2. Every language mirrors English ────────────────────────────────────────
 
-print("languages mirror en.json")
+print("languages vs en.json")
+completeness: dict[str, tuple[int, list[str], list[str]]] = {}
 for lang, data in languages.items():
     if lang == "en":
         continue
     flat = flatten(data)
     missing = sorted(set(en_flat) - set(flat))
     extra = sorted(set(flat) - set(en_flat))
-    check(f"{lang}: no missing keys", not missing, ", ".join(missing[:10]))
-    check(f"{lang}: no keys English lacks", not extra, ", ".join(extra[:10]))
+    completeness[lang] = (len(en_flat) - len(missing), missing, extra)
+    if missing:
+        warn(f"{lang}: {len(missing)} untranslated (shown in English): " + ", ".join(missing[:5])
+             + (" …" if len(missing) > 5 else ""))
+    if extra:
+        warn(f"{lang}: {len(extra)} keys no longer in en.json (safe to delete): " + ", ".join(extra[:5])
+             + (" …" if len(extra) > 5 else ""))
     bad = [k for k in flat if k in en_flat and placeholders(flat[k]) != placeholders(en_flat[k])]
     check(f"{lang}: placeholders match English", not bad, ", ".join(bad[:10]))
 
@@ -109,6 +127,10 @@ for lang, data in languages.items():
     for key, value in flat.items():
         if not isinstance(value, str):
             problems.append(f"{key} (not a string)")
+        elif not value.strip():
+            # Home Assistant would show an empty label, not the English fallback
+            # (a translation tool may write untranslated strings as "").
+            problems.append(f"{key} (empty)")
         elif value != value.strip():
             problems.append(f"{key} (leading/trailing space)")
         elif "<" in value:
@@ -152,8 +174,29 @@ used |= {f"phase_{p}" for p in ("collecting", "heating", "stall", "finishing")}
 check(f"backend: {len(used)} used keys all in selector.backend", used <= set(backend),
       ", ".join(sorted(used - set(backend))))
 
+# ── 5. Completeness table ────────────────────────────────────────────────────
+
+rows = [
+    (lang, done, len(en_flat), missing)
+    for lang, (done, missing, _extra) in sorted(completeness.items())
+]
+table = ["| Language | Translated | Missing |", "|---|---|---|",
+         f"| en (source) | {len(en_flat)}/{len(en_flat)} | — |"]
+table += [
+    f"| {lang} | {done}/{total} ({100 * done // total}%) | {len(missing) or '—'} |"
+    for lang, done, total, missing in rows
+]
+print()
+print("\n".join(table))
+summary = os.environ.get("GITHUB_STEP_SUMMARY")
+if summary:
+    with open(summary, "a", encoding="utf-8") as fh:
+        fh.write("## Translations\n\n" + "\n".join(table) + "\n")
+        if WARNINGS:
+            fh.write("\n" + "\n".join(f"- ⚠️ {w}" for w in WARNINGS) + "\n")
+
 print()
 if FAILED:
     print(f"{FAILED} of {PASSED + FAILED} checks FAILED")
     sys.exit(1)
-print(f"All {PASSED} checks passed.")
+print(f"All {PASSED} checks passed" + (f" ({len(WARNINGS)} warnings)." if WARNINGS else "."))

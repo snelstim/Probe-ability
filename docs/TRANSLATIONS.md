@@ -8,7 +8,7 @@ Activity text and the auto-stop notification.
 English (`en.json`) is the source of truth. Home Assistant fills any key missing from another
 language with its English text, so a partial translation is safe.
 
-[![Translation status](https://hosted.weblate.org/widget/probe-ability/svg-badge.svg)](https://hosted.weblate.org/engage/probe-ability/)
+[![Translation status per language](https://hosted.weblate.org/widget/probe-ability/multi-auto.svg)](https://hosted.weblate.org/engage/probe-ability/)
 
 ## Contributing a translation
 
@@ -52,7 +52,7 @@ Tips:
 
 ### Languages
 
-For live completeness, see the badge above or the Weblate project page.
+For live completeness per language, see the chart above or the Weblate project page.
 
 | Language | Notes |
 |----------|-------|

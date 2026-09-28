@@ -1,4 +1,4 @@
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![Translation status](https://hosted.weblate.org/widget/probe-ability/svg-badge.svg)](https://hosted.weblate.org/engage/probe-ability/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![Help translate](https://img.shields.io/badge/Weblate-help%20translate-2ECCAA?logo=weblate&logoColor=white)](https://hosted.weblate.org/engage/probe-ability/)
 # Probe-ability
 
 A Home Assistant custom integration that predicts when your meat will reach a target internal temperature — like a Meater or other predictive thermometer, but using any temperature sensors you already have.
@@ -694,9 +694,11 @@ python3 test_config_flow.py
 
 ## Translations
 
-Probe-ability is available in English, Dutch and Romanian. Help translate it into your language on
+Help translate Probe-ability into your language on
 [Hosted Weblate](https://hosted.weblate.org/engage/probe-ability/), right in the browser. See
 [docs/TRANSLATIONS.md](docs/TRANSLATIONS.md) for details.
+
+[![Translation status per language](https://hosted.weblate.org/widget/probe-ability/multi-auto.svg)](https://hosted.weblate.org/engage/probe-ability/)
 
 ---
 

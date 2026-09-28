@@ -1,5 +1,5 @@
 /**
- * Probe-ability Card v0.12.0
+ * Probe-ability Card v0.12.1
  *
  * Custom Lovelace card for the Probe-ability integration.
  * Shows cook status, predictions, and lets you start/stop cooks.
@@ -33,7 +33,7 @@
  *                   these probes, named by their sensor entity id)
  */
 
-const CARD_VERSION = "0.12.0";
+const CARD_VERSION = "0.12.1";
 
 // ─── Localisation ────────────────────────────────────────────────────────────
 //

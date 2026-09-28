@@ -127,6 +127,12 @@ _COOK_NAME_MAP: dict[str, tuple[int, int, int, int, int]] = {
     "Beef Rib Eye Medium":              _encode("rib_eye",     "medium"),
     "Beef Rib Eye Medium Well":         _encode("rib_eye",     "medium_well"),
     "Beef Rib Eye Well Done":           _encode("rib_eye",     "well_done"),
+    # Beef — Flank
+    "Beef Flank Rare":                  _encode("flank",       "rare"),
+    "Beef Flank Medium Rare":           _encode("flank",       "medium_rare"),
+    "Beef Flank Medium":                _encode("flank",       "medium"),
+    "Beef Flank Medium Well":           _encode("flank",       "medium_well"),
+    "Beef Flank Well Done":             _encode("flank",       "well_done"),
     # Beef — Brisket
     "Beef Brisket Fall Apart":          _encode("brisket",     "fall_apart"),
     # Beef — Burger
@@ -185,6 +191,7 @@ _COOK_NAME_MAP: dict[str, tuple[int, int, int, int, int]] = {
 _CUT_NAME_MAP: dict[str, tuple[str, tuple[tuple[str, float], ...]]] = {
     "Beef Sirloin":             ("sirloin", (('rare', 50.0), ('medium_rare', 54.0), ('medium', 60.0), ('medium_well', 65.0), ('well_done', 71.0))),
     "Beef Rib Eye":             ("rib_eye", (('rare', 50.0), ('medium_rare', 54.0), ('medium', 60.0), ('medium_well', 65.0), ('well_done', 71.0))),
+    "Beef Flank":               ("flank", (('rare', 50.0), ('medium_rare', 54.0), ('medium', 60.0), ('medium_well', 65.0), ('well_done', 71.0))),
     "Beef Brisket":             ("brisket", (('fall_apart', 96.0),)),
     "Beef Burger":              ("burger", (('medium_rare', 55.0), ('medium', 60.0), ('medium_well', 65.0), ('well_done', 71.0))),
     "Beef Roast":               ("roast", (('medium_rare', 57.0), ('medium', 60.0), ('well_done', 71.0))),

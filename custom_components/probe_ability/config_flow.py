@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 import voluptuous as vol
@@ -41,6 +42,8 @@ from .const import (
     CONF_TEMP_UNIT,
     DOMAIN,
     LIVE_ACTIVITY_MIN_HA,
+    PROBE_NAME_KEYS,
+    PROBE_SENSOR_KEYS,
     TEMP_UNIT_CELSIUS,
     TEMP_UNIT_FAHRENHEIT,
     display_unit,
@@ -79,6 +82,26 @@ SETUP_SCHEMA = vol.Schema(
 )
 
 
+def reconfigured_data(
+    current: Mapping[str, Any], user_input: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Build the new entry data from a submitted Reconfigure form.
+
+    A cleared optional field (an EntitySelector or a probe-name TextSelector)
+    is simply absent from ``user_input``, so merging the form over the stored
+    data (``entry.data | user_input``) would silently keep the old probe or
+    name.  Drop every probe sensor / name key first and let the form decide
+    which probes exist; everything else (temperature unit, export / share
+    flags, keys added by later versions) is carried over.
+    """
+    data = {
+        k: v for k, v in current.items()
+        if k not in PROBE_SENSOR_KEYS and k not in PROBE_NAME_KEYS
+    }
+    data.update(user_input)
+    return data
+
+
 class CookPredictorConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Probe-ability."""
 
@@ -97,7 +120,9 @@ class CookPredictorConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             # Use internal sensor entity_id as unique id to prevent duplicates
             await self.async_set_unique_id(user_input[CONF_INTERNAL_SENSOR])
-            self._abort_if_unique_id_configured()
+            # reload_on_update=False: the entry has an update listener, and
+            # HA (2026.12+) refuses a flow that reloads such an entry itself.
+            self._abort_if_unique_id_configured(reload_on_update=False)
 
             # Title the entry after the sensor's friendly name so multiple
             # instances (e.g. smoker + oven) are easy to tell apart in the UI.
@@ -114,17 +139,24 @@ class CookPredictorConfigFlow(ConfigFlow, domain=DOMAIN):
         """Handle reconfiguration of an existing entry.
 
         Shown when the user clicks '⋮ → Reconfigure' on the integration card
-        in Settings → Devices & Services.  Lets the user change sensors or
-        toggle the export / share options without removing and re-adding the
-        integration.
+        in Settings → Devices & Services.  Lets the user change sensors, add
+        or remove probes and names, or toggle the export / share options
+        without removing and re-adding the integration.
         """
         entry = self._get_reconfigure_entry()
 
         if user_input is not None:
-            return self.async_update_reload_and_abort(
-                entry,
-                data_updates=user_input,
+            # Replace entry.data outright (see reconfigured_data).  The entry's
+            # unique_id (probe 1's original entity id) stays as is.
+            #
+            # The reload is scheduled by the entry's update listener
+            # (__init__._async_entry_updated), not by this flow: a config flow
+            # reloading an entry that has an update listener is deprecated and
+            # raises from Home Assistant 2026.12.
+            self.hass.config_entries.async_update_entry(
+                entry, data=reconfigured_data(entry.data, user_input)
             )
+            return self.async_abort(reason="reconfigure_successful")
 
         # Entries from before 0.11.5 store the unit as "C" / "F"; the selector's
         # options are lowercase, so normalise or the field shows up empty.

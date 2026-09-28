@@ -89,6 +89,8 @@ The config flow is a one-time hardware setup. It does **not** ask for target tem
 
 > **Temperature unit:** Choose **Fahrenheit** to have the card show all temperatures (targets, presets, current/ambient readings, pull temp) in °F. This is a display-only setting — internally everything is stored in Celsius, and probe readings are normalized to °C automatically based on each sensor's own `unit_of_measurement`, so a probe that reports in °F won't be double-converted. Change it any time via **⋮ → Reconfigure**.
 
+> **Adding or removing probes later:** **⋮ → Reconfigure** also lets you add a probe or clear one you no longer use. Clearing a probe removes its *time remaining* / *estimated completion* entities as well.
+
 > **Tip:** Probe resolution matters. A probe that reports in 0.1°C increments gives the model much finer data to work with than one that rounds to the nearest 1°C — which produces a staircase signal that makes heating rate and deceleration features less accurate. If you have a choice of sensors, pick the higher-resolution one.
 
 ---
@@ -680,6 +682,12 @@ Test the Live Activity payload and throttle logic:
 
 ```bash
 python3 test_live_activity.py
+```
+
+Test the Reconfigure flow and the config-entry update listener:
+
+```bash
+python3 test_config_flow.py
 ```
 
 ---

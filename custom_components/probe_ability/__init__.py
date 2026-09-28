@@ -124,16 +124,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not hass.services.has_service(DOMAIN, SERVICE_START_COOK):
         _register_services(hass)
 
-    # Options (Live Activity targets) apply in place — no entry reload
-    entry.async_on_unload(entry.add_update_listener(_async_options_updated))
+    # One update listener serves both flows: Reconfigure rewrites entry.data
+    # and needs a reload; the options flow (Live Activity targets) is applied
+    # in place so an active cook is not interrupted.  The reload must live
+    # here — from HA 2026.12 a config flow may no longer reload an entry
+    # itself (async_update_reload_and_abort) when it has an update listener.
+    entry.async_on_unload(entry.add_update_listener(_async_entry_updated))
 
     return True
 
 
-async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Apply changed options without reloading the entry (keeps an active cook intact)."""
+async def _async_entry_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Apply a config-entry update from either flow.
+
+    ⋮ → Reconfigure replaces ``entry.data`` (sensors, probes, names, unit,
+    export / share flags).  The running monitor was built from the old data,
+    so schedule a reload.  ⋮ → Configure only touches ``entry.options`` (Live
+    Activity targets); apply those in place — no reload, so an active cook
+    keeps running.
+    """
     monitor = _get_monitor(hass, entry.entry_id)
     if monitor is None:
+        return
+    if monitor.config_changed:
+        hass.config_entries.async_schedule_reload(entry.entry_id)
         return
     monitor.live_activity.set_targets(
         list(entry.options.get(CONF_LIVE_ACTIVITY_TARGETS, [])), monitor
@@ -274,6 +288,10 @@ class CookMonitor:
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry, texts: Texts) -> None:
         self.hass = hass
         self.entry = entry
+        # entry.data is swapped in place by async_update_entry; remember what
+        # this monitor was built from so the update listener can tell a
+        # Reconfigure (needs a reload) from an options-only change (applied live).
+        self._setup_data: dict = dict(entry.data)
         # User-facing backend strings (notifications, Live Activities, "Probe N")
         self.texts = texts
 
@@ -333,6 +351,11 @@ class CookMonitor:
     @property
     def predictor(self) -> CookPredictor:
         return self.predictors[0]
+
+    @property
+    def config_changed(self) -> bool:
+        """True once entry.data no longer matches what this monitor was built from."""
+        return dict(self.entry.data) != self._setup_data
 
     # ── Configuration helpers ────────────────────────────────────────────
 

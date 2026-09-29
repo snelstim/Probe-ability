@@ -3,19 +3,19 @@
     "step": {
       "user": {
         "title": "Configurează Probe-ability",
-        "description": "Selectează senzorii de temperatură folosiți pentru predicțiile de gătire.",
+        "description": "Selectează senzorii de temperatură folosiți pentru estimarea timpului de gătire.",
         "data": {
-          "internal_sensor": "Temperatura interioară (a cărnii) — sonda 1",
+          "internal_sensor": "Temperatura internă (a cărnii) — sonda 1",
           "ambient_sensor": "Temperatura ambiantă (cuptor/afumătoare)",
-          "internal_sensor_2": "Temperatura interioară — sonda 2 (opțional)",
-          "internal_sensor_3": "Temperatura interioară — sonda 3 (opțional)",
-          "internal_sensor_4": "Temperatura interioară — sonda 4 (opțional)",
-          "probe_name": "Numele sondei 1 (opțional, ex. Verde)",
-          "probe_name_2": "Numele sondei 2 (opțional)",
-          "probe_name_3": "Numele sondei 3 (opțional)",
-          "probe_name_4": "Numele sondei 4 (opțional)",
+          "internal_sensor_2": "Temperatura internă — sonda 2 (opțional)",
+          "internal_sensor_3": "Temperatura internă — sonda 3 (opțional)",
+          "internal_sensor_4": "Temperatura internă — sonda 4 (opțional)",
+          "probe_name": "Nume sondă 1 (opțional, ex. Verde)",
+          "probe_name_2": "Nume sondă 2 (opțional)",
+          "probe_name_3": "Nume sondă 3 (opțional)",
+          "probe_name_4": "Nume sondă 4 (opțional)",
           "temp_unit": "Unitate de temperatură",
-          "export_cook_data": "Exportă local datele de gătire (pentru reantrenare)",
+          "export_cook_data": "Exportă local datele de gătire (pentru reinstruire)",
           "share_cook_data": "Partajează date de gătire anonimizate pentru a îmbunătăți modelul"
         }
       },
@@ -23,36 +23,36 @@
         "title": "Reconfigurează Probe-ability",
         "description": "Actualizează senzorii sau opțiunile de partajare a datelor pentru această instanță.",
         "data": {
-          "internal_sensor": "Temperatura interioară (a cărnii) — sonda 1",
+          "internal_sensor": "Temperatura internă (a cărnii) — sonda 1",
           "ambient_sensor": "Temperatura ambiantă (cuptor/afumătoare)",
-          "internal_sensor_2": "Temperatura interioară — sonda 2 (opțional)",
-          "internal_sensor_3": "Temperatura interioară — sonda 3 (opțional)",
-          "internal_sensor_4": "Temperatura interioară — sonda 4 (opțional)",
-          "probe_name": "Numele sondei 1 (opțional, ex. Verde)",
-          "probe_name_2": "Numele sondei 2 (opțional)",
-          "probe_name_3": "Numele sondei 3 (opțional)",
-          "probe_name_4": "Numele sondei 4 (opțional)",
+          "internal_sensor_2": "Temperatura internă — sonda 2 (opțional)",
+          "internal_sensor_3": "Temperatura internă — sonda 3 (opțional)",
+          "internal_sensor_4": "Temperatura internă — sonda 4 (opțional)",
+          "probe_name": "Nume sondă 1 (opțional, ex. Verde)",
+          "probe_name_2": "Nume sondă 2 (opțional)",
+          "probe_name_3": "Nume sondă 3 (opțional)",
+          "probe_name_4": "Nume sondă 4 (opțional)",
           "temp_unit": "Unitate de temperatură",
-          "export_cook_data": "Exportă local datele de gătire (pentru reantrenare)",
+          "export_cook_data": "Exportă local datele de gătire (pentru reinstruire)",
           "share_cook_data": "Partajează date de gătire anonimizate pentru a îmbunătăți modelul"
         }
       }
     },
     "abort": {
-      "already_configured": "Acest senzor interior este deja configurat.",
+      "already_configured": "Acest senzor intern este deja configurat.",
       "reconfigure_successful": "Configurația a fost actualizată cu succes."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Live Activities (aplicația Companion)",
-        "description": "Afișează o Live Activity pe telefon cât timp rulează o gătire: temperatura curentă, bara de progres și o numărătoare inversă până la finalizarea estimată. Necesită aplicația Home Assistant Companion pe iOS 17.2+ sau Android 16+ și Home Assistant 2026.7 sau mai nou pentru iOS.{ha_version_note}",
+        "title": "Activități live (aplicație însoțitoare)",
+        "description": "Afișează o activitate live pe telefon cât timp procesul de gătire e în desfășurare: temperatura curentă, bara de progres și o numărătoare inversă până la timpul de finalizare estimat. Necesită aplicația Home Assistant Companion pe iOS 17.2+ sau Android 16+ și Home Assistant 2026.7 sau mai nou pentru iOS.{ha_version_note}",
         "data": {
           "live_activity_targets": "Dispozitive (servicii notify.mobile_app_…)"
         },
         "data_description": {
-          "live_activity_targets": "O Live Activity pentru fiecare dispozitiv selectat. Lasă gol pentru a dezactiva."
+          "live_activity_targets": "O activitate live pentru fiecare dispozitiv selectat. Lasă gol pentru a dezactiva."
         }
       }
     }
@@ -79,12 +79,12 @@
         "mode_combined": "Combinat",
         "mode_individual": "Individual",
         "individual_badge": "Individual",
-        "loading_presets": "Se încarcă presetările…",
+        "loading_presets": "Se încarcă setările prestabilite…",
         "select_cut": "— Alege bucata —",
         "select_doneness": "— Alege gradul de gătire —",
         "target_temp_label": "Temperatura țintă ({unit})",
         "target_label": "Țintă ({unit})",
-        "no_probe_sensors": "Niciun senzor de sondă disponibil",
+        "no_probe_sensors": "Nicio sondă disponibilă",
         "no_probe_sensors_hint": "Verifică dacă sondele termometrului sunt conectate și vizibile în Home Assistant.",
         "warming_up_target": "Se încălzește… țintă",
         "collecting_data": "Se colectează date ({count}/{needed})",
@@ -209,14 +209,30 @@
   },
   "entity": {
     "sensor": {
-      "time_remaining": { "name": "Timp rămas" },
-      "time_remaining_probe2": { "name": "Timp rămas (sonda 2)" },
-      "time_remaining_probe3": { "name": "Timp rămas (sonda 3)" },
-      "time_remaining_probe4": { "name": "Timp rămas (sonda 4)" },
-      "estimated_completion": { "name": "Finalizare estimată" },
-      "estimated_completion_probe2": { "name": "Finalizare estimată (sonda 2)" },
-      "estimated_completion_probe3": { "name": "Finalizare estimată (sonda 3)" },
-      "estimated_completion_probe4": { "name": "Finalizare estimată (sonda 4)" }
+      "time_remaining": {
+        "name": "Timp rămas"
+      },
+      "time_remaining_probe2": {
+        "name": "Timp rămas (sonda 2)"
+      },
+      "time_remaining_probe3": {
+        "name": "Timp rămas (sonda 3)"
+      },
+      "time_remaining_probe4": {
+        "name": "Timp rămas (sonda 4)"
+      },
+      "estimated_completion": {
+        "name": "Finalizare estimată"
+      },
+      "estimated_completion_probe2": {
+        "name": "Finalizare estimată (sonda 2)"
+      },
+      "estimated_completion_probe3": {
+        "name": "Finalizare estimată (sonda 3)"
+      },
+      "estimated_completion_probe4": {
+        "name": "Finalizare estimată (sonda 4)"
+      }
     }
   },
   "services": {
@@ -230,7 +246,7 @@
         },
         "target_temp": {
           "name": "Temperatura țintă",
-          "description": "Temperatura interioară țintă în °C."
+          "description": "Temperatura internă țintă în °C."
         },
         "probe_mode": {
           "name": "Mod sonde",
@@ -266,7 +282,7 @@
         },
         "target_temp": {
           "name": "Temperatura țintă",
-          "description": "Noua temperatură interioară țintă în °C."
+          "description": "Temperatura internă țintă nouă în °C."
         },
         "probe_index": {
           "name": "Index sondă",

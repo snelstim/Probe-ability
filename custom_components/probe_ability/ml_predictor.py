@@ -177,6 +177,15 @@ _COOK_NAME_MAP: dict[str, tuple[int, int, int, int, int]] = {
     "Lamb Rack / Ribs Medium":          _encode("rib_rack",    "medium"),
     # Lamb — Shoulder
     "Lamb Shoulder Fall Apart":         _encode("shoulder",    "fall_apart"),
+    # Bread — no bread in the training data: the cuts are not in _CUT_LOOKUP and
+    # "baked" is not in _DONENESS_ENC, so _encode gives the generic "other" cook
+    # (the encoding bread was baked with before it had presets).  retrain.py
+    # resolves names through resolve_meat, so training sees the same encoding.
+    "Bread Yeasted Baked":              _encode("yeasted",     "baked"),
+    "Bread Sourdough Baked":            _encode("sourdough",   "baked"),
+    "Bread Enriched (Brioche / Cozonac) Baked": _encode("enriched", "baked"),
+    "Bread Rye Baked":                  _encode("rye",         "baked"),
+    "Bread With Inclusions Baked":      _encode("inclusions",  "baked"),
     # Other — Fish / Salmon
     "Other Fish / Salmon Medium Rare":  _encode("fillet",      "medium_rare"),
     "Other Fish / Salmon Medium":       _encode("fillet",      "medium"),
@@ -207,13 +216,18 @@ _CUT_NAME_MAP: dict[str, tuple[str, tuple[tuple[str, float], ...]]] = {
     "Lamb Rump":                ("rump_lamb", (('rare', 52.0), ('medium_rare', 57.0), ('medium', 63.0), ('well_done', 71.0))),
     "Lamb Rack / Ribs":         ("rib_rack", (('rare', 52.0), ('medium_rare', 57.0), ('medium', 63.0))),
     "Lamb Shoulder":            ("shoulder", (('fall_apart', 85.0),)),
+    "Bread Yeasted":            ("yeasted", (('baked', 95.0),)),
+    "Bread Sourdough":          ("sourdough", (('baked', 93.0),)),
+    "Bread Enriched (Brioche / Cozonac)": ("enriched", (('baked', 88.0),)),
+    "Bread Rye":                ("rye", (('baked', 96.0),)),
+    "Bread With Inclusions":    ("inclusions", (('baked', 98.0),)),
     "Other Fish / Salmon":      ("fillet", (('medium_rare', 52.0), ('medium', 60.0))),
     "Other Other":              ("other", (('medium', 70.0), ('well_done', 75.0))),
 }
 
 # 'Category' → a representative cut id, whose category/animal codes are used with
 # a generic cut — for a cook started with only a category picked.
-_CATEGORY_NAME_MAP: dict[str, str] = {"Beef": "sirloin", "Pork": "loin", "Poultry": "breast", "Lamb": "leg_lamb", "Other": "fillet"}
+_CATEGORY_NAME_MAP: dict[str, str] = {"Beef": "sirloin", "Pork": "loin", "Poultry": "breast", "Lamb": "leg_lamb", "Bread": "yeasted", "Other": "fillet"}
 
 
 # Fallback encoding for "Custom" or any unrecognised cook name.

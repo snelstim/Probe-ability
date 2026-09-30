@@ -181,6 +181,48 @@
       ]
     },
     {
+      "id": "bread",
+      "label": "Bread",
+      "icon": "🍞",
+      "cuts": [
+        {
+          "id": "yeasted",
+          "label": "Yeasted",
+          "doneness": [
+            { "id": "baked", "label": "Baked", "temp": 95 }
+          ]
+        },
+        {
+          "id": "sourdough",
+          "label": "Sourdough",
+          "doneness": [
+            { "id": "baked", "label": "Baked", "temp": 93 }
+          ]
+        },
+        {
+          "id": "enriched",
+          "label": "Enriched (Brioche / Cozonac)",
+          "doneness": [
+            { "id": "baked", "label": "Baked", "temp": 88 }
+          ]
+        },
+        {
+          "id": "rye",
+          "label": "Rye",
+          "doneness": [
+            { "id": "baked", "label": "Baked", "temp": 96 }
+          ]
+        },
+        {
+          "id": "inclusions",
+          "label": "With Inclusions",
+          "doneness": [
+            { "id": "baked", "label": "Baked", "temp": 98 }
+          ]
+        }
+      ]
+    },
+    {
       "id": "other",
       "label": "Other",
       "icon": "🍖",

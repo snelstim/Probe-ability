@@ -152,6 +152,7 @@
         "pork": "Pork",
         "poultry": "Poultry",
         "lamb": "Lamb",
+        "bread": "Bread",
         "other": "Other"
       }
     },
@@ -174,6 +175,11 @@
         "leg_lamb": "Leg",
         "rump_lamb": "Rump",
         "rib_rack": "Rack / Ribs",
+        "yeasted": "Yeasted",
+        "sourdough": "Sourdough",
+        "enriched": "Enriched (Brioche / Cozonac)",
+        "rye": "Rye",
+        "inclusions": "With Inclusions",
         "fillet": "Fish / Salmon",
         "other": "Other"
       }
@@ -186,7 +192,8 @@
         "medium_well": "Medium Well",
         "well_done": "Well Done",
         "fall_apart": "Fall Apart",
-        "pulled": "Pulled"
+        "pulled": "Pulled",
+        "baked": "Baked"
       }
     },
     "backend": {

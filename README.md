@@ -330,9 +330,10 @@ Start a new cook. If a sensor is unavailable when this is called, a red error no
 > - `"Pork Shoulder Pulled"`, `"Pork Loin / Chop Well Done"`
 > - `"Poultry Chicken Breast Medium"`, `"Poultry Duck Breast Medium"`
 > - `"Lamb Leg Medium Rare"`, `"Lamb Rack / Ribs Rare"`
+> - `"Bread Sourdough Baked"`, `"Bread Enriched (Brioche / Cozonac) Baked"`
 > - `"Other Fish / Salmon Medium Rare"`
 >
-> Custom names fall back to a generic beef profile.
+> Custom names fall back to a generic "other" profile. The model has not been trained on bread yet, so the Bread presets use that same generic profile for now.
 
 ### `probe_ability.stop_cook`
 

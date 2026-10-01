@@ -152,7 +152,8 @@
         "pork": "Varken",
         "poultry": "Gevogelte",
         "lamb": "Lam",
-        "other": "Overig"
+        "other": "Overig",
+        "bread": "Brood"
       }
     },
     "preset_cut": {
@@ -175,7 +176,11 @@
         "rump_lamb": "Rump",
         "rib_rack": "Rack / Ribben",
         "fillet": "Vis / Zalm",
-        "other": "Overig"
+        "other": "Overig",
+        "yeasted": "Gegist",
+        "sourdough": "Zuurdesem",
+        "enriched": "Verrijkt (brioche)",
+        "rye": "Roggebrood"
       }
     },
     "preset_doneness": {
@@ -186,7 +191,8 @@
         "medium_well": "Medium well",
         "well_done": "Doorbakken",
         "fall_apart": "Uiteenvallend",
-        "pulled": "Pulled"
+        "pulled": "Pulled",
+        "baked": "Gebakken"
       }
     },
     "backend": {
@@ -209,14 +215,30 @@
   },
   "entity": {
     "sensor": {
-      "time_remaining": { "name": "Resterende tijd" },
-      "time_remaining_probe2": { "name": "Resterende tijd (probe 2)" },
-      "time_remaining_probe3": { "name": "Resterende tijd (probe 3)" },
-      "time_remaining_probe4": { "name": "Resterende tijd (probe 4)" },
-      "estimated_completion": { "name": "Geschatte voltooiing" },
-      "estimated_completion_probe2": { "name": "Geschatte voltooiing (probe 2)" },
-      "estimated_completion_probe3": { "name": "Geschatte voltooiing (probe 3)" },
-      "estimated_completion_probe4": { "name": "Geschatte voltooiing (probe 4)" }
+      "time_remaining": {
+        "name": "Resterende tijd"
+      },
+      "time_remaining_probe2": {
+        "name": "Resterende tijd (probe 2)"
+      },
+      "time_remaining_probe3": {
+        "name": "Resterende tijd (probe 3)"
+      },
+      "time_remaining_probe4": {
+        "name": "Resterende tijd (probe 4)"
+      },
+      "estimated_completion": {
+        "name": "Geschatte voltooiing"
+      },
+      "estimated_completion_probe2": {
+        "name": "Geschatte voltooiing (probe 2)"
+      },
+      "estimated_completion_probe3": {
+        "name": "Geschatte voltooiing (probe 3)"
+      },
+      "estimated_completion_probe4": {
+        "name": "Geschatte voltooiing (probe 4)"
+      }
     }
   },
   "services": {

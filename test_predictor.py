@@ -264,6 +264,78 @@ def check_names_and_readings() -> None:
     print(f"All {checks} checks passed.")
 
 
+def check_collection_window() -> None:
+    """Collecting ends early on a fast, steady rise and waits a little on a flat probe."""
+    checks = 0
+
+    def ok(cond: bool, what: str) -> None:
+        nonlocal checks
+        assert cond, what
+        checks += 1
+        print(f"  ok  {what}")
+
+    def first_ready(curve, target=74.0, step=30.0, minutes=30):
+        """Feed curve(t_s) -> (internal, ambient); return (ready_s, predictor)."""
+        p = CookPredictor(target_temp=target)
+        progress = []
+        for n in range(int(minutes * 60 / step) + 1):
+            t = n * step
+            ti, ta = curve(t)
+            p.add_reading(t, ti, ta)
+            p.predict()
+            progress.append(p.collect_progress)
+            if p._collect_ready:
+                return t, p, progress
+        return None, p, progress
+
+    # Hot and fast: ~2 °C/min from the start
+    ready, p, progress = first_ready(lambda t: (8 + 2.0 * t / 60, 220.0))
+    ok(ready is not None and ready < p._min_data_seconds, f"fast cook predicts before 10 min (at {ready}s)")
+    ok(ready >= p._collect_floor_s, "...but not before the floor")
+    ok(all(b >= a for a, b in zip(progress, progress[1:])), "progress never goes backwards")
+    ok(progress[-1] == 100 and max(progress[:-1]) < 100, "progress hits 100 only when ready")
+
+    # Normal low-and-slow: 0.3 °C/min — moving, so the usual 10 minutes
+    ready, p, _ = first_ready(lambda t: (5 + 0.3 * t / 60, 110.0), target=96.0)
+    ok(ready is not None and abs(ready - p._min_data_seconds) <= 30, f"slow cook starts at 10 min (at {ready}s)")
+
+    # Barely moving: waits past 10 min, released at the cap
+    ready, p, _ = first_ready(lambda t: (5 + 0.05 * t / 60, 110.0), target=96.0)
+    ok(ready is not None and ready > p._min_data_seconds, f"flat probe waits past 10 min (at {ready}s)")
+    ok(ready <= p._collect_max_s, "...but never beyond the cap")
+
+    # Probe-insertion settle: warm from the air, drops into cold meat, then flat
+    def insertion(t):
+        return (max(4.0, 25.0 - 7.0 * t / 60), 110.0)
+    ready, p, _ = first_ready(insertion, target=96.0)
+    ok(ready is not None and ready > p._collect_floor_s, "insertion drop does not count as a rise")
+
+    # A single spike after the floor is not a steady rise
+    ready, p, _ = first_ready(lambda t: (20.0 + (10.0 if t >= 330 else 0.0), 180.0), minutes=8)
+    ok(ready is None, "a one-off jump does not end collecting")
+
+    # Latch: survives a flat spot and a save/restore
+    ready, p, _ = first_ready(lambda t: (8 + 2.0 * t / 60, 220.0))
+    t_last = p.readings[-1][0]
+    for k in range(1, 6):
+        p.add_reading(t_last + 30 * k, p.readings[-1][1], 220.0)
+    ok(p.predict().phase != "collecting", "ready stays latched through a flat spot")
+    restored = CookPredictor.from_dict(p.to_dict())
+    ok(restored._collect_ready and restored.predict().phase != "collecting", "latch survives save/restore")
+
+    # A cook saved before the dynamic window: predicting at >= 10 min stays predicting
+    legacy = CookPredictor(target_temp=96.0)
+    for n in range(25):
+        legacy.add_reading(n * 30.0, 20.0, 110.0)  # 12 min, flat
+    state = legacy.to_dict()
+    state.pop("collect_ready")
+    ok(CookPredictor.from_dict(state)._collect_ready, "legacy cook past 10 min is not sent back to collecting")
+    p.reset()
+    ok(not p._collect_ready and p.collect_progress == 0, "reset clears the latch")
+
+    print(f"All {checks} checks passed.")
+
+
 if __name__ == "__main__":
     print("\n━━━ TEST 1: Normal roast (no stall) ━━━\n")
     simulate_cook(
@@ -294,3 +366,6 @@ if __name__ == "__main__":
 
     print("\n━━━ TEST 6: EMA ages the previous estimate (asserts) ━━━\n")
     check_smoothing_tracks_clock()
+
+    print("\n━━━ TEST 7: dynamic data-collection window (asserts) ━━━\n")
+    check_collection_window()

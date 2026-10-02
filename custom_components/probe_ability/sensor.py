@@ -265,6 +265,9 @@ class CookTimeRemainingSensor(CookPredictorSensorBase):
                     "readings_count": len(predictor.readings),
                 }
             )
+            if result.phase == "collecting":
+                attrs["collect_progress"] = predictor.collect_progress
+                attrs["collect_waiting_rise"] = predictor.collecting_waiting_for_rise
             if result.rate_per_minute is not None:
                 attrs["rate_c_per_minute"] = round(result.rate_per_minute, 3)
             if result.message:
@@ -303,6 +306,11 @@ class CookTimeRemainingSensor(CookPredictorSensorBase):
                     attrs[f"probe_{n}_confidence"] = extra_result.confidence
                     attrs[f"probe_{n}_prediction_model"] = extra_result.prediction_model
                     attrs[f"probe_{n}_readings_count"] = len(extra_pred.readings)
+                    if extra_result.phase == "collecting":
+                        attrs[f"probe_{n}_collect_progress"] = extra_pred.collect_progress
+                        attrs[f"probe_{n}_collect_waiting_rise"] = (
+                            extra_pred.collecting_waiting_for_rise
+                        )
                     if extra_result.rate_per_minute is not None:
                         attrs[f"probe_{n}_rate_c_per_minute"] = round(extra_result.rate_per_minute, 3)
                     if extra_result.time_remaining_seconds is not None:

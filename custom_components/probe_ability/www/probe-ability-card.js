@@ -270,10 +270,32 @@ function _sameIdentity(a, b) {
 const _targetKey = (i) => (i === 0 ? "target_temp_entity" : `target_temp_entity_${i + 1}`);
 
 // Data-collection phase: readings needed before the first prediction, the
-// assumed reading interval, and the data span the predictor waits for.
+// assumed reading interval, and the data span the predictor waits for.  The
+// span is only the fallback for a backend without collect_progress (before
+// 0.12.5 the wait was a fixed 10 minutes; now it depends on the cook).
 const NEEDED_READINGS = 10;
 const READING_INTERVAL_S = 30;
 const REQUIRED_SPAN_S = 600;
+
+// Collecting status for one probe: {pct, text} for a single progress bar.
+// progress / waitingRise come from the backend (collect_progress /
+// collect_waiting_rise); without them, estimate from the reading count.
+function collectStatus(count, progress, waitingRise) {
+  if (count < NEEDED_READINGS) {
+    const pct = progress != null ? progress : (count / NEEDED_READINGS) * 100;
+    return { pct, text: t("readings", { count, needed: NEEDED_READINGS }) };
+  }
+  if (progress != null) {
+    return { pct: progress, text: waitingRise ? t("waiting_for_rise") : t("building_span") };
+  }
+  const elapsedS = count * READING_INTERVAL_S;
+  const spanRemainS = Math.max(0, REQUIRED_SPAN_S - elapsedS);
+  const readyAt = spanRemainS > 0 ? etaFromMinutes(spanRemainS / 60) : "";
+  return {
+    pct: Math.min((elapsedS / REQUIRED_SPAN_S) * 100, 100),
+    text: readyAt ? `${t("building_span")} ${t("ready_at", { time: readyAt })}` : t("building_span"),
+  };
+}
 
 // Brand logo — inline SVG so it works without any extra file reference.
 // A unique clipPath id avoids collisions when multiple cards are on the same page.
@@ -1121,23 +1143,12 @@ class CookPredictorCard extends HTMLElement {
     const cur = pd.currentTemp != null ? fmt(pd.currentTemp) : "—";
 
     if (pd.phase === "collecting") {
-      // Same two phases as the open tile: readings, then the data span.
-      const count = pd.readingsCount || 0;
-      const color = "var(--warning-color)";
-      if (count < NEEDED_READINGS) {
-        return {
-          primary: cur,
-          secondary: t("readings", { count, needed: NEEDED_READINGS }),
-          progress: { pct: (count / NEEDED_READINGS) * 100, color },
-        };
-      }
-      const elapsedS = count * READING_INTERVAL_S;
-      const spanRemainS = Math.max(0, REQUIRED_SPAN_S - elapsedS);
-      const readyAt = spanRemainS > 0 ? etaFromMinutes(spanRemainS / 60) : "";
+      // Same status as the open tile.
+      const st = collectStatus(pd.readingsCount || 0, pd.collectProgress, pd.collectWaitingRise);
       return {
         primary: cur,
-        secondary: readyAt ? t("ready_at", { time: readyAt }) : t("building_span"),
-        progress: { pct: Math.min((elapsedS / REQUIRED_SPAN_S) * 100, 100), color },
+        secondary: st.text,
+        progress: { pct: st.pct, color: "var(--warning-color)" },
       };
     }
     if (pd.phase === "done") {
@@ -1471,10 +1482,9 @@ class CookPredictorCard extends HTMLElement {
 
   _renderCollecting(attrs) {
     const count = attrs.readings_count || 0;
-    const needed = 10;
-    const pct = Math.min((count / needed) * 100, 100);
-    const displayCount = Math.min(count, needed);
-    const msg = attrs.message || t("collecting_data", { count: displayCount, needed });
+    const st = collectStatus(count, attrs.collect_progress ?? null, attrs.collect_waiting_rise || false);
+    const pct = Math.min(st.pct, 100);
+    const msg = st.text;
     const probeMode = attrs.probe_mode || "combined";
     const probeActive = attrs.probe_active || [true];
 
@@ -1766,6 +1776,8 @@ class CookPredictorCard extends HTMLElement {
           predictionModel: attrs.prediction_model || "",
           timeRemaining: parseFloat(state.state) || null,
           readingsCount: attrs.readings_count || 0,
+          collectProgress: attrs.collect_progress ?? null,
+          collectWaitingRise: attrs.collect_waiting_rise || false,
           pullTemp: attrs.pull_temp ?? null,
           ratePerMinute: attrs.rate_c_per_minute ?? null,
         });
@@ -1779,6 +1791,8 @@ class CookPredictorCard extends HTMLElement {
           predictionModel: attrs[`probe_${n}_prediction_model`] || "",
           timeRemaining: attrs[`probe_${n}_time_remaining`] || null,
           readingsCount: attrs[`probe_${n}_readings_count`] || 0,
+          collectProgress: attrs[`probe_${n}_collect_progress`] ?? null,
+          collectWaitingRise: attrs[`probe_${n}_collect_waiting_rise`] || false,
           pullTemp: attrs[`probe_${n}_pull_temp`] ?? null,
           ratePerMinute: attrs[`probe_${n}_rate_c_per_minute`] ?? null,
         });
@@ -1848,16 +1862,8 @@ class CookPredictorCard extends HTMLElement {
           </button>`;
 
       } else if (pd.phase === "collecting") {
-        // ── Collecting: two-phase progress ────────────────────────────
-        // Phase 1: accumulate 10 readings.
-        // Phase 2: wait for the 10-minute data span (30 s/reading assumed).
-        const count = pd.readingsCount;
-        const displayCount = Math.min(count, NEEDED_READINGS);
-        const readingsDone = count >= NEEDED_READINGS;
-        const elapsedS = count * READING_INTERVAL_S;
-        const spanRemainS = Math.max(0, REQUIRED_SPAN_S - elapsedS);
-        const spanPct = Math.min((elapsedS / REQUIRED_SPAN_S) * 100, 100);
-        const readyAt = spanRemainS > 0 ? etaFromMinutes(spanRemainS / 60) : "";
+        // ── Collecting: one bar towards the first prediction ───────────
+        const st = collectStatus(pd.readingsCount, pd.collectProgress, pd.collectWaitingRise);
 
         contentBlock = `
           <div style="padding:10px 0 4px;">
@@ -1868,29 +1874,13 @@ class CookPredictorCard extends HTMLElement {
               </span>
             </div>
 
-            ${!readingsDone ? `
-              <div style="font-size:0.78em;color:var(--secondary-text-color);margin-bottom:4px;">
-                ${t("readings", { count: displayCount, needed: NEEDED_READINGS })}
-              </div>
-              <div style="background:var(--divider-color);border-radius:4px;height:6px;overflow:hidden;">
-                <div style="background:var(--warning-color);height:100%;
-                            width:${(count / NEEDED_READINGS) * 100}%;
-                            border-radius:4px;transition:width 0.5s;"></div>
-              </div>
-            ` : `
-              <div style="display:flex;align-items:center;gap:4px;font-size:0.78em;
-                          color:var(--success-color);margin-bottom:6px;">
-                <ha-icon icon="mdi:check" style="--mdc-icon-size:14px;"></ha-icon>
-                ${t("readings", { count: NEEDED_READINGS, needed: NEEDED_READINGS })}
-              </div>
-              <div style="font-size:0.78em;color:var(--secondary-text-color);margin-bottom:4px;">
-                ${t("building_span")}${readyAt ? ` ${t("ready_at", { time: readyAt })}` : ""}
-              </div>
-              <div style="background:var(--divider-color);border-radius:4px;height:6px;overflow:hidden;">
-                <div style="background:var(--warning-color);height:100%;width:${spanPct}%;
-                            border-radius:4px;transition:width 0.5s;"></div>
-              </div>
-            `}
+            <div style="font-size:0.78em;color:var(--secondary-text-color);margin-bottom:4px;">
+              ${st.text}
+            </div>
+            <div style="background:var(--divider-color);border-radius:4px;height:6px;overflow:hidden;">
+              <div style="background:var(--warning-color);height:100%;width:${st.pct}%;
+                          border-radius:4px;transition:width 0.5s;"></div>
+            </div>
 
             <div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:0 8px;margin-top:8px;
                         font-size:0.8em;color:var(--secondary-text-color);">

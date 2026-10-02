@@ -117,6 +117,10 @@ class CookPredictor:
         # tolerance line resurrects a large ETA at the cook's peak.
         self._done_latched: bool = False
 
+        # Data collection ends once the readings carry a real signal (see
+        # _collection_ready); latched so an ETA never falls back to collecting.
+        self._collect_ready: bool = False
+
         # Rest tracking.  Once the meat is within carryover range of the target
         # and the cooker ambient collapses for good (meat removed from heat),
         # follow the carryover rise and finish the cook at its peak — even when
@@ -149,7 +153,17 @@ class CookPredictor:
 
         # Tuning constants
         self._min_readings = 10
-        self._min_data_seconds = 600  # 10 min before first prediction
+        self._min_data_seconds = 600  # normal wait before the first prediction
+        # Dynamic collection window (_collection_ready): a fast cook may start
+        # earlier, a probe that has barely moved waits a little longer.
+        self._collect_floor_s = 300.0       # never predict on less than this
+        self._collect_fast_rise_c = 5.0     # ...but this much rise is enough signal
+        self._collect_fast_frac = 0.15      # ...as is this share of start→target
+        self._collect_steady_s = 120.0      # rate compared over two windows of this length
+        self._collect_steady_ratio = 2.0    # ...and must agree within this factor
+        self._collect_slow_rise_c = 1.5     # at _min_data_seconds, wait for this much rise...
+        self._collect_max_s = 900.0         # ...but never longer than this
+        self._collect_preheat_rate = None   # °C/min ambient rise that keeps waiting (None = off)
         self._window_seconds = 2400  # 40 min sliding window for fit
         self._rate_window_seconds = 300  # 5 min window for instantaneous rate
         self._stall_threshold_c = 0.5  # <0.5°C change over stall window = stall
@@ -247,6 +261,7 @@ class CookPredictor:
         self._last_stable_ts = None
         self._recent_etas.clear()
         self._done_latched = False
+        self._collect_ready = False
         self._reset_rest()
         self._target_history = []
 
@@ -260,6 +275,7 @@ class CookPredictor:
             "cook_name": self.cook_name,
             "start_temp": self._start_temp,
             "done_latched": self._done_latched,
+            "collect_ready": self._collect_ready,
             "target_history": [list(h) for h in self._target_history],
             "rest": {
                 "pull_ts": self._rest_pull_ts,
@@ -281,6 +297,13 @@ class CookPredictor:
         predictor.cook_name = data.get("cook_name", "")
         predictor._start_temp = data.get("start_temp")
         predictor._done_latched = data.get("done_latched", False)
+        if "collect_ready" in data:
+            predictor._collect_ready = bool(data["collect_ready"])
+        elif len(predictor.readings) >= predictor._min_readings:
+            # Saved before the dynamic window existed: keep a cook that was
+            # already predicting from dropping back to collecting.
+            span = predictor.readings[-1][0] - predictor.readings[0][0]
+            predictor._collect_ready = span >= predictor._min_data_seconds
         hist = data.get("target_history")
         predictor._target_history = (
             [[float(e), float(v)] for e, v in hist] if hist
@@ -334,17 +357,19 @@ class CookPredictor:
         if rest is not None:
             return rest
 
+        if not self._collection_ready():
+            span = now_ts - self.readings[0][0]
+            if span >= self._min_data_seconds:
+                message = "Waiting for the temperature to rise"
+            else:
+                message = (
+                    f"Need more data ({span / 60:.0f}/{self._min_data_seconds / 60:.0f} min)"
+                )
+            return PredictionResult(phase="collecting", message=message)
+
         # Build sliding window
         windowed = self._windowed_readings()
         data_span = windowed[-1][0] - windowed[0][0]
-
-        if data_span < self._min_data_seconds:
-            elapsed = data_span / 60
-            needed = self._min_data_seconds / 60
-            return PredictionResult(
-                phase="collecting",
-                message=f"Need more data ({elapsed:.0f}/{needed:.0f} min)",
-            )
 
         rate = self._calculate_rate(windowed)
         phase = self._detect_phase(windowed, rate)
@@ -682,6 +707,105 @@ class CookPredictor:
             return None
         remaining = self._last_stable_remaining - age
         return remaining if remaining > 0 else None
+
+    # ── Data collection ─────────────────────────────────────────────────
+
+    def _collection_ready(self) -> bool:
+        """True once there is enough signal for a first prediction (latched).
+
+        A fixed 10-minute wait is a third of a hot-and-fast cook or a bread,
+        so a steady rise of several degrees ends collecting early.  A probe
+        that has barely moved by the normal 10 minutes waits a little longer,
+        up to _collect_max_s, after which an ETA is shown regardless.
+        """
+        if self._collect_ready:
+            return True
+        if len(self.readings) < self._min_readings:
+            return False
+        span = self.readings[-1][0] - self.readings[0][0]
+        if span >= self._collect_max_s:
+            ready = True
+        elif self._preheating():
+            ready = False
+        elif span >= self._min_data_seconds and self._collect_rise() >= self._collect_slow_rise_c:
+            ready = True
+        else:
+            ready = span >= self._collect_floor_s and self._fast_signal()
+        self._collect_ready = ready
+        return ready
+
+    def _collect_rise(self) -> float:
+        """Rise from the lowest reading so far — a probe settling after it goes
+        in (warm from the air, cooling into cold meat) is not progress."""
+        low = min(ti for _, ti, _ in self.readings)
+        return self.readings[-1][1] - low
+
+    def _fast_signal(self) -> bool:
+        """A large, steady rise: enough to predict before the normal wait."""
+        rise = self._collect_rise()
+        low = min(ti for _, ti, _ in self.readings)
+        span_to_target = self._target_temp - low
+        big = rise >= self._collect_fast_rise_c or (
+            span_to_target > 0 and rise / span_to_target >= self._collect_fast_frac
+        )
+        if not big:
+            return False
+        # Steady: the last two windows both rise at a similar rate, so a probe
+        # insertion jump or a single spike can't end collecting.
+        now = self.readings[-1][0]
+        w = self._collect_steady_s
+        recent = self._rate_between(now - w, now)
+        before = self._rate_between(now - 2 * w, now - w)
+        if recent is None or before is None or recent <= 0 or before <= 0:
+            return False
+        ratio = recent / before
+        return 1 / self._collect_steady_ratio <= ratio <= self._collect_steady_ratio
+
+    def _rate_between(self, t0: float, t1: float) -> float | None:
+        """Internal-temperature rate (°C/min) across readings within [t0, t1]."""
+        sel = [(t, ti) for t, ti, _ in self.readings if t0 <= t <= t1]
+        if len(sel) < 2 or sel[-1][0] - sel[0][0] < 1:
+            return None
+        return (sel[-1][1] - sel[0][1]) / (sel[-1][0] - sel[0][0]) * 60
+
+    def _preheating(self) -> bool:
+        """Ambient still climbing fast (oven / smoker coming up to temperature)."""
+        if self._collect_preheat_rate is None:
+            return False
+        now = self.readings[-1][0]
+        sel = [(t, ta) for t, _, ta in self.readings if t >= now - self._rate_window_seconds]
+        if len(sel) < 2 or sel[-1][0] - sel[0][0] < 1:
+            return False
+        rate = (sel[-1][1] - sel[0][1]) / (sel[-1][0] - sel[0][0]) * 60
+        return rate > self._collect_preheat_rate
+
+    @property
+    def collecting_waiting_for_rise(self) -> bool:
+        """Past the normal wait but the probe has barely moved yet."""
+        if self._collect_ready or len(self.readings) < self._min_readings:
+            return False
+        return self.readings[-1][0] - self.readings[0][0] >= self._min_data_seconds
+
+    @property
+    def collect_progress(self) -> int:
+        """0–100 towards the first prediction: the furthest-along of the ways to get there."""
+        if self._collect_ready:
+            return 100
+        if not self.readings:
+            return 0
+        n = len(self.readings)
+        if n < self._min_readings:
+            # Readings come in every ~30 s, so the count tracks time here.
+            return min(99, round(n / self._min_readings * self._collect_floor_s / self._min_data_seconds * 100))
+        span = self.readings[-1][0] - self.readings[0][0]
+        rise = max(0.0, self._collect_rise())
+        fast = min(span / self._collect_floor_s, 1) * min(rise / self._collect_fast_rise_c, 1)
+        slow_need = self._collect_slow_rise_c
+        normal = min(span / self._min_data_seconds, 1) * (
+            min(rise / slow_need, 1) if slow_need > 0 else 1
+        )
+        cap = span / self._collect_max_s
+        return min(99, round(max(fast, normal, cap) * 100))
 
     # ── Internal helpers ────────────────────────────────────────────────
 

@@ -89,61 +89,61 @@
         "warming_up_target": "Se încălzește… țintă",
         "collecting_data": "Se colectează date ({count}/{needed})",
         "readings": "Citiri: {count}/{needed}",
-        "building_span": "Se acumulează date…",
+        "building_span": "Se culeg date…",
         "ready_at": "gata la {time}",
         "remaining": "rămas",
         "estimating": "se estimează…",
         "tap_for_temp": "atinge pentru temp.",
         "tap_for_time": "atinge pentru timp",
-        "done_at": "Gata ~{eta}",
-        "eta": "Estimat: {eta}",
-        "rate": "Ritm: {rate} {unit}/min",
+        "done_at": "Gata la ~{eta}",
+        "eta": "Estimare: {eta}",
+        "rate": "Rata: {rate} {unit}/min",
         "stalled": "(stagnare)",
         "ambient": "Ambiant",
-        "internal": "Interior",
+        "internal": "Intern",
         "probe_n": "Sonda {n}",
         "of_temp": "din {temp}",
         "remove_from_heat": "Ia de pe foc",
         "remove_from_heat_now": "Ia de pe foc acum!",
-        "carryover_full": "Gătirea reziduală o va aduce la {temp}.",
-        "pull_temp": "Temperatura de scoatere: {temp}.",
-        "carryover_short": "Gătirea reziduală o duce la {temp}.",
+        "carryover_full": "Căldura reziduală va aduce la {temp}.",
+        "pull_temp": "Temperatura de scoatere de pe foc: {temp}.",
+        "carryover_short": "Căldura reziduală va aduce la {temp}.",
         "pull_temp_short": "Temp. de scoatere: {temp}.",
         "stall_detected": "Stagnare a temperaturii detectată",
         "stall_detail": "Timpul afișat este ultima estimare stabilă. Se va actualiza din nou când temperatura începe să crească.",
         "stall_short": "Stagnare — ultima estimare stabilă",
         "unreachable_detected": "Ținta nu poate fi atinsă",
-        "unreachable_detail": "Temperatura ambiantă a scăzut sub țintă. Mărește focul pentru a termina gătirea.",
-        "unreachable_short": "Ambiant sub țintă — mărește focul",
+        "unreachable_detail": "Temperatura ambiantă a scăzut sub țintă. Mărește focul pentru a termina procesul de gătire.",
+        "unreachable_short": "Temp. ambiantă sub țintă — mărește focul",
         "target_reached": "Țintă atinsă!",
         "cook_complete": "Gătire finalizată!",
         "target_temp_reached": "Temperatura țintă a fost atinsă.",
-        "not_started": "Nepornit",
-        "are_you_sure": "Ești sigur?",
+        "not_started": "Nepornită",
+        "are_you_sure": "Sigur?",
         "yes_cancel": "Da, anulează",
         "yes_stop": "Da, oprește",
         "yes_new_cook": "Da, gătire nouă",
-        "keep_cooking": "Continuă gătirea",
+        "keep_cooking": "Gătește în continuare",
         "entity_not_found": "Entitate negăsită: {entity}",
-        "err_define_entity": "Definește o entitate (senzorul time_remaining)",
-        "switch_to_temp": "Comută la afișarea temperaturii",
-        "switch_to_countdown": "Comută la numărătoarea inversă",
+        "err_define_entity": "Definește o entitate (senzor time_remaining)",
+        "switch_to_temp": "Afișează temperatura",
+        "switch_to_countdown": "Afișează numărătoarea inversă",
         "hours_short": "h",
         "minutes_short": "m",
         "expand": "Arată detaliile",
         "collapse": "Ascunde detaliile",
         "ed_sec_general": "General",
-        "ed_entity": "Entitatea timp rămas (obligatoriu)",
+        "ed_entity": "Entitate timp rămas (obligatoriu)",
         "ed_ambient": "Senzor ambiant (opțional)",
         "ed_target_entity": "input_number pentru temperatura țintă — sonda 1 / combinat (opțional)",
         "ed_target_entity_n": "input_number pentru temperatura țintă — sonda {n} (opțional)",
-        "ed_probe_n": "Senzorul sondei {n} (opțional)",
-        "ed_entry": "ID intrare (opțional, pentru mai multe instanțe)",
-        "ed_layout": "Aranjarea sondelor",
+        "ed_probe_n": "Senzor sondă {n} (opțional)",
+        "ed_entry": "ID de intrare (opțional, pentru mai multe instanțe)",
+        "ed_layout": "Amplasare sonde",
         "layout_vertical": "Vertical — una sub alta",
         "layout_horizontal": "Orizontal — una lângă alta",
         "layout_grid": "Grilă — 2 coloane",
-        "ed_collapsible": "Casete pliabile — atinge antetul unei sonde pentru a o deschide sau închide"
+        "ed_collapsible": "Casete meniu — atinge antetul sondei pentru a deschide sau închide"
       }
     },
     "preset_category": {
@@ -152,7 +152,8 @@
         "pork": "Porc",
         "poultry": "Pasăre",
         "lamb": "Miel",
-        "other": "Altele"
+        "other": "Altele",
+        "bread": "Pâine"
       }
     },
     "preset_cut": {
@@ -165,17 +166,22 @@
         "roast": "Friptură la cuptor",
         "loin": "Mușchi / cotlet",
         "shoulder": "Spată",
-        "belly": "Piept de porc (burtă)",
-        "rib_pork": "Coaste",
+        "belly": "Piept de porc (pork belly)",
+        "rib_pork": "Costițe",
         "breast": "Piept de pui",
         "duck_breast": "Piept de rață",
         "thigh": "Pulpă",
         "whole": "Pasăre întreagă",
         "leg_lamb": "Pulpă",
-        "rump_lamb": "Crupă",
+        "rump_lamb": "Pulpă (rump)",
         "rib_rack": "Cotlete / coaste",
-        "fillet": "Pește / somon",
-        "other": "Altele"
+        "fillet": "Pește / Somon",
+        "other": "Altele",
+        "yeasted": "Pâine cu drojdie",
+        "sourdough": "Pâine cu maia",
+        "enriched": "Brioche / Cozonac",
+        "rye": "Pâine de secară",
+        "inclusions": "Cu incluziuni"
       }
     },
     "preset_doneness": {
@@ -186,24 +192,25 @@
         "medium_well": "Mediu spre bine făcut",
         "well_done": "Bine făcut",
         "fall_apart": "Se desprinde de pe os",
-        "pulled": "Destrămat (pulled)"
+        "pulled": "Fraged (pulled)",
+        "baked": "Copt"
       }
     },
     "backend": {
       "options": {
         "probe_n": "Sonda {n}",
         "default_title": "Probe-ability",
-        "phase_collecting": "Colectare date",
+        "phase_collecting": "Culegere date",
         "phase_heating": "Încălzire",
         "phase_stall": "Stagnare",
         "phase_finishing": "Finalizare",
         "msg_phase": "{phase} · {current} / {target}",
         "msg_target_reached": "Țintă atinsă · {target}",
-        "msg_rested": "Odihnită · vârf {peak} · cu {short}° sub ținta {target}",
-        "msg_unreachable": "Țintă de neatins · mărește focul · {current} / {target}",
+        "msg_rested": "Odihnit · apogeu {peak} · cu {short}° sub ținta {target}",
+        "msg_unreachable": "Ținta nu se poate atinge · mărește focul · {current} / {target}",
         "low_confidence": "încredere scăzută",
         "auto_stop_title": "Gătire BBQ oprită automat",
-        "auto_stop_message": "Gătirea „{cook}” a fost oprită automat deoarece toate sondele ({probes}) au fost deconectate."
+        "auto_stop_message": "Gătire „{cook}” a fost oprită automat deoarece toate sondele ({probes}) au fost deconectate."
       }
     }
   },
@@ -237,8 +244,8 @@
   },
   "services": {
     "start_cook": {
-      "name": "Pornește gătirea",
-      "description": "Pornește o nouă sesiune de gătire.",
+      "name": "Începe gătirea",
+      "description": "Începe o nouă sesiune de gătire.",
       "fields": {
         "entry_id": {
           "name": "ID intrare",
@@ -250,7 +257,7 @@
         },
         "probe_mode": {
           "name": "Mod sonde",
-          "description": "combined = toate sondele împart aceeași gătire, individual = fiecare sondă este independentă."
+          "description": "combinat = toate sondele pentru aceeași gătire, individual = fiecare sondă este independentă."
         },
         "probe_index": {
           "name": "Index sondă",
@@ -260,7 +267,7 @@
     },
     "stop_cook": {
       "name": "Oprește gătirea",
-      "description": "Oprește o gătire și șterge citirile.",
+      "description": "Oprește procesul de gătire și șterge citirile.",
       "fields": {
         "entry_id": {
           "name": "ID intrare",
@@ -293,16 +300,16 @@
   },
   "exceptions": {
     "ambient_unavailable": {
-      "message": "Nu se poate porni gătirea: senzorul ambiant nu este disponibil"
+      "message": "Nu se poate începe procesul de gătire: senzorul ambiant nu este disponibil"
     },
     "probe_unavailable": {
-      "message": "Nu se poate porni gătirea: senzorul {probe} ({sensor_id}) nu este disponibil"
+      "message": "Nu se poate începe procesul de gătire: senzorul {probe} ({sensor_id}) nu este disponibil"
     },
     "probe_not_configured": {
-      "message": "Nu se poate porni gătirea: {probe} nu este configurată în această instanță Probe-ability"
+      "message": "Nu se poate începe procesul de gătire: {probe} nu este configurată în această instanță Probe-ability"
     },
     "no_probes_available": {
-      "message": "Nu se poate porni gătirea: niciun senzor de sondă nu este disponibil momentan"
+      "message": "Nu se poate începe procesul de gătire: nicio sondă nu este disponibilă momentan"
     }
   }
 }

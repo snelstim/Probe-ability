@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "custom_components", 
 
 from live_activity import (  # noqa: E402
     ACTIVITY_MAX_AGE_S,
+    AMBIENT_DELTA_C,
     ETA_DELTA_S,
     MIN_PUSH_INTERVAL_S,
     LiveActivityManager,
@@ -26,6 +27,7 @@ from live_activity import (  # noqa: E402
     build_clear_payload,
     build_payload,
     compute_progress,
+    format_ambient,
     format_temp,
     is_silent,
     should_alert,
@@ -120,6 +122,18 @@ check("message done", build_payload(slot(phase="done", current_c=95.2), EN, sile
 check("message unreachable", build_payload(slot(phase="unreachable"), EN, silent=True)["message"].startswith("Target unreachable"))
 check("message heating nl", build_payload(slot(), NL, silent=True)["message"] == "Opwarmen · 63.5° / 95.0°")
 check("title default name nl", activity_title("Cook", "Probe 2", texts=NL) == "Probe-ability · Probe 2")
+check("format_ambient C", format_ambient(117.6, "C") == "118°")
+check("format_ambient F", format_ambient(117.6, "F") == "244°")
+check("ambient: message", build_payload(slot(ambient_c=117.6), EN, silent=True)["message"] == "Heating · 63.5° / 95.0° · ambient 118°")
+check("ambient: before low confidence",
+      build_payload(slot(ambient_c=117.6, confidence="low"), EN, silent=True)["message"].endswith("· ambient 118° · low confidence"))
+check("ambient: unreachable", build_payload(slot(phase="unreachable", ambient_c=80.0), EN, silent=True)["message"].endswith("· ambient 80°"))
+check("ambient: not on done", "ambient" not in build_payload(slot(phase="done", ambient_c=117.6), EN, silent=True)["message"])
+check("ambient: critical_text C", build_payload(slot(ambient_c=117.6), EN, silent=True)["data"]["critical_text"] == "63.5°C · 118°")
+check("ambient: critical_text F", build_payload(slot(ambient_c=117.6, temp_unit="F"), EN, silent=True)["data"]["critical_text"] == "146°F · 244°")
+check("ambient: critical_text not on done", build_payload(slot(phase="done", ambient_c=117.6), EN, silent=True)["data"]["critical_text"] == "63.5°C")
+check("ambient: no probe reading, no critical_text",
+      "critical_text" not in build_payload(slot(current_c=None, start_c=None, ambient_c=117.6), EN, silent=True)["data"])
 check("clear payload", build_clear_payload("t") == {"message": "clear_notification", "data": {"tag": "t"}})
 check("use_chronometer collecting false", not use_chronometer(slot(phase="collecting")))
 
@@ -128,8 +142,8 @@ check("use_chronometer collecting false", not use_chronometer(slot(phase="collec
 print("should_push")
 
 
-def rec(ts=0.0, phase="heating", target=95.0, cur=60.0, progress=61, when=1_700_000_000):
-    return PushRecord(ts=ts, phase=phase, target_c=target, current_c=cur, progress=progress, when=when)
+def rec(ts=0.0, phase="heating", target=95.0, cur=60.0, progress=61, when=1_700_000_000, amb=None):
+    return PushRecord(ts=ts, phase=phase, target_c=target, current_c=cur, progress=progress, when=when, ambient_c=amb)
 
 
 base = rec()
@@ -146,6 +160,13 @@ check("ETA +119 s", not should_push(base, rec(ts=MIN_PUSH_INTERVAL_S + 1, when=1
 check("ETA +120 s", should_push(base, rec(ts=MIN_PUSH_INTERVAL_S + 1, when=1_700_000_000 + ETA_DELTA_S)))
 check("progress int change", should_push(base, rec(ts=MIN_PUSH_INTERVAL_S + 1, progress=62)))
 check("first reading bypasses interval", should_push(rec(cur=None, progress=0), rec(ts=5, cur=20.0)))
+check("ambient within interval", not should_push(rec(amb=110.0), rec(ts=MIN_PUSH_INTERVAL_S - 1, amb=130.0)))
+check("ambient below delta", not should_push(rec(amb=110.0), rec(ts=MIN_PUSH_INTERVAL_S + 1, amb=110.0 + AMBIENT_DELTA_C - 0.1)))
+check("ambient at delta", should_push(rec(amb=110.0), rec(ts=MIN_PUSH_INTERVAL_S + 1, amb=110.0 - AMBIENT_DELTA_C)))
+check("ambient switched on bypasses interval", should_push(rec(), rec(ts=5, amb=110.0)))
+check("ambient switched off bypasses interval", should_push(rec(amb=110.0), rec(ts=5)))
+check("silent: ambient-only change is silent", is_silent(rec(amb=110.0), rec(ts=100, amb=120.0)))
+check("record carries ambient", make_record(slot(ambient_c=101.0), 1.0).ambient_c == 101.0)
 check("silent: first push is loud", not is_silent(None, rec()))
 check("silent: done is loud", not is_silent(base, rec(phase="done")))
 check("silent: target change is loud", not is_silent(base, rec(target=90.0)))
@@ -263,6 +284,18 @@ async def end_to_end():
     check("chronometer seen mid-cook", any(c[1]["data"].get("chronometer") for c in pushes))
     check("progress monotonic-ish", all(b[1]["data"]["progress"] >= a[1]["data"]["progress"] - 1 for a, b in zip(pushes, pushes[1:])))
     check("no warnings", not log.warnings, str(log.warnings))
+    check("ambient shown by default", "· ambient 110°" in pushes[1][1]["message"], pushes[1][1]["message"])
+
+    # show_ambient=False: no ambient anywhere
+    hass_off = FakeHass({"mobile_app_phone"})
+    pred_off = CookPredictor(target_temp=74.0)
+    mgr_off = LiveActivityManager(hass_off, "abcdef12-entry", "C", ["mobile_app_phone"], FakeLogger(), EN,
+                                  show_ambient=False)
+    simulate(mgr_off, hass_off, FakeMonitor([pred_off]), pred_off)
+    await hass_off.drain()
+    check("show_ambient=False: never shown",
+          not any("ambient" in c[1].get("message", "") or "·" in c[1]["data"].get("critical_text", "")
+                  for c in hass_off.calls))
 
     # stop -> clear
     mon.probe_active = [False]
@@ -291,7 +324,22 @@ async def manager_behaviour():
     mgr.refresh(mon, now=30.0)
     await hass.drain()
     check("no repeat warning", len(log.warnings) == 1)
-    check("F critical text", hass.calls[-1][1]["data"]["critical_text"] == "68°F")  # p0 (lowest temp) drives
+    check("F critical text", hass.calls[-1][1]["data"]["critical_text"] == "68°F · 392°")  # p0 (lowest temp) drives
+    check("F ambient in message", hass.calls[-1][1]["message"].endswith("· ambient 392°"))
+
+    # ambient toggle (options flow): off -> forced push without ambient; same value -> no-op
+    n = len(hass.calls)
+    mgr.set_show_ambient(False, mon, now=31.0)
+    await hass.drain()
+    check("ambient off pushes now", len(hass.calls) == n + 1)
+    check("ambient off: plain critical text", hass.calls[-1][1]["data"]["critical_text"] == "68°F")
+    check("ambient off: no ambient in message", "ambient" not in hass.calls[-1][1]["message"])
+    mgr.set_show_ambient(False, mon, now=32.0)
+    await hass.drain()
+    check("ambient unchanged: no push", len(hass.calls) == n + 1)
+    mgr.set_show_ambient(True, mon, now=33.0)
+    await hass.drain()
+    check("ambient back on", hass.calls[-1][1]["data"]["critical_text"] == "68°F · 392°")
 
     # combined -> individual: clear _c, start _p1 and _p2
     n = len(hass.calls)

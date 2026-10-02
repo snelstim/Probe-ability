@@ -33,6 +33,7 @@ from .const import (
     CONF_INTERNAL_SENSOR_2,
     CONF_INTERNAL_SENSOR_3,
     CONF_INTERNAL_SENSOR_4,
+    CONF_LIVE_ACTIVITY_AMBIENT,
     CONF_LIVE_ACTIVITY_TARGETS,
     CONF_PROBE_NAME,
     CONF_PROBE_NAME_2,
@@ -40,6 +41,7 @@ from .const import (
     CONF_PROBE_NAME_4,
     CONF_SHARE_DATA,
     CONF_TEMP_UNIT,
+    DEFAULT_LIVE_ACTIVITY_AMBIENT,
     DOMAIN,
     LIVE_ACTIVITY_MIN_HA,
     PROBE_NAME_KEYS,
@@ -173,7 +175,8 @@ class CookPredictorConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class ProbeAbilityOptionsFlow(OptionsFlow):
-    """Options: which Companion-app devices receive a cook-progress Live Activity.
+    """Options: which Companion-app devices receive a cook-progress Live Activity,
+    and whether it shows the ambient temperature.
 
     Applied in place by the entry's update listener — no reload, so an
     active cook is not interrupted.
@@ -188,11 +191,19 @@ class ProbeAbilityOptionsFlow(OptionsFlow):
                 data={
                     CONF_LIVE_ACTIVITY_TARGETS: list(
                         user_input.get(CONF_LIVE_ACTIVITY_TARGETS, [])
-                    )
+                    ),
+                    CONF_LIVE_ACTIVITY_AMBIENT: bool(
+                        user_input.get(
+                            CONF_LIVE_ACTIVITY_AMBIENT, DEFAULT_LIVE_ACTIVITY_AMBIENT
+                        )
+                    ),
                 },
             )
 
         current = list(self.config_entry.options.get(CONF_LIVE_ACTIVITY_TARGETS, []))
+        show_ambient = self.config_entry.options.get(
+            CONF_LIVE_ACTIVITY_AMBIENT, DEFAULT_LIVE_ACTIVITY_AMBIENT
+        )
         discovered = [
             name
             for name in self.hass.services.async_services_for_domain("notify")
@@ -214,6 +225,9 @@ class ProbeAbilityOptionsFlow(OptionsFlow):
                         mode=SelectSelectorMode.DROPDOWN,
                     )
                 ),
+                vol.Optional(
+                    CONF_LIVE_ACTIVITY_AMBIENT, default=show_ambient
+                ): BooleanSelector(),
             }
         )
 

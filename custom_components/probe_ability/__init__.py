@@ -35,9 +35,11 @@ from .const import (
     AUTO_STOP_DELAY,
     CONF_AMBIENT_SENSOR,
     CONF_EXPORT_DATA,
+    CONF_LIVE_ACTIVITY_AMBIENT,
     CONF_LIVE_ACTIVITY_TARGETS,
     CONF_SHARE_DATA,
     DEFAULT_COOK_NAME,
+    DEFAULT_LIVE_ACTIVITY_AMBIENT,
     DEFAULT_TARGET_TEMP,
     DOMAIN,
     EXPORT_SUBDIR,
@@ -140,7 +142,7 @@ async def _async_entry_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
     ⋮ → Reconfigure replaces ``entry.data`` (sensors, probes, names, unit,
     export / share flags).  The running monitor was built from the old data,
     so schedule a reload.  ⋮ → Configure only touches ``entry.options`` (Live
-    Activity targets); apply those in place — no reload, so an active cook
+    Activity targets / ambient toggle); apply those in place — no reload, so an active cook
     keeps running.
     """
     monitor = _get_monitor(hass, entry.entry_id)
@@ -149,6 +151,9 @@ async def _async_entry_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
     if monitor.config_changed:
         hass.config_entries.async_schedule_reload(entry.entry_id)
         return
+    monitor.live_activity.set_show_ambient(
+        entry.options.get(CONF_LIVE_ACTIVITY_AMBIENT, DEFAULT_LIVE_ACTIVITY_AMBIENT), monitor
+    )
     monitor.live_activity.set_targets(
         list(entry.options.get(CONF_LIVE_ACTIVITY_TARGETS, [])), monitor
     )
@@ -325,6 +330,9 @@ class CookMonitor:
             list(entry.options.get(CONF_LIVE_ACTIVITY_TARGETS, [])),
             _LOGGER,
             texts,
+            show_ambient=entry.options.get(
+                CONF_LIVE_ACTIVITY_AMBIENT, DEFAULT_LIVE_ACTIVITY_AMBIENT
+            ),
         )
 
     def set_texts(self, texts: Texts) -> None:

@@ -33,6 +33,9 @@ TAG_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 MIN_PUSH_INTERVAL_S = 60
 # Temperature movement (°C) that justifies a routine update.
 TEMP_DELTA_C = 0.5
+# Ambient movement (°C) that justifies a routine update — the pit/oven sensor
+# is noisier than the probe, so a coarser step than TEMP_DELTA_C.
+AMBIENT_DELTA_C = 2.0
 # Chronometer target movement (s) that justifies a routine update.
 ETA_DELTA_S = 120
 # iOS ends a Live Activity after 8 h; roll to a fresh tag a little before that.
@@ -73,6 +76,7 @@ class SlotState:
     temp_unit: str  # "C" | "F"
     rest_peak_c: float | None = None   # highest temp reached while resting (after a pull)
     rest_short_c: float | None = None  # how far that peak fell short of target (None if not short)
+    ambient_c: float | None = None  # shown in the activity; None when hidden or no reading
 
 
 @dataclass
@@ -85,6 +89,7 @@ class PushRecord:
     current_c: float | None
     progress: int
     when: int | None  # chronometer timestamp, None when no chronometer was sent
+    ambient_c: float | None = None
 
 
 # ── Pure functions ───────────────────────────────────────────────────────────
@@ -97,6 +102,12 @@ def format_temp(celsius: float, unit: str, *, with_unit: bool = False) -> str:
     else:
         text = f"{celsius:.1f}°"
     return f"{text}{unit}" if with_unit else text
+
+
+def format_ambient(celsius: float, unit: str) -> str:
+    """Ambient in whole degrees — it only needs to show drift, and stays short."""
+    value = celsius * 9 / 5 + 32 if unit == "F" else celsius
+    return f"{round(value)}°"
 
 
 def compute_progress(
@@ -135,13 +146,18 @@ def build_message(state: SlotState, texts: Texts) -> str:
             )
         return texts("msg_target_reached", target=target)
     cur = format_temp(state.current_c, unit) if state.current_c is not None else "--"
+    ambient = (
+        f" · {texts('msg_ambient', ambient=format_ambient(state.ambient_c, unit))}"
+        if state.ambient_c is not None
+        else ""
+    )
     if state.phase == "unreachable":
-        return texts("msg_unreachable", current=cur, target=target)
+        return texts("msg_unreachable", current=cur, target=target) + ambient
     key = f"phase_{state.phase}"
     label = texts(key)
     if label == key:  # a phase without a translation
         label = state.phase.capitalize()
-    text = texts("msg_phase", phase=label, current=cur, target=target)
+    text = texts("msg_phase", phase=label, current=cur, target=target) + ambient
     if state.confidence == "low" and use_chronometer(state):
         text += f" · {texts('low_confidence')}"
     return text
@@ -171,7 +187,12 @@ def build_payload(state: SlotState, texts: Texts, *, silent: bool, alert: bool =
         "silent": silent,
     }
     if state.current_c is not None:
-        data["critical_text"] = format_temp(state.current_c, state.temp_unit, with_unit=True)
+        # Ambient goes here too: on iOS the chronometer replaces the message
+        # line, so this is the only place it stays visible during a cook.
+        critical = format_temp(state.current_c, state.temp_unit, with_unit=True)
+        if state.ambient_c is not None and state.phase != "done":
+            critical += f" · {format_ambient(state.ambient_c, state.temp_unit)}"
+        data["critical_text"] = critical
     if use_chronometer(state):
         data["chronometer"] = True
         data["when"] = int(state.eta_ts)
@@ -209,6 +230,7 @@ def make_record(state: SlotState, now: float) -> PushRecord:
             state.start_c, state.current_c, state.target_c, state.phase
         ),
         when=int(state.eta_ts) if use_chronometer(state) else None,
+        ambient_c=state.ambient_c,
     )
 
 
@@ -223,6 +245,9 @@ def should_push(prev: PushRecord | None, new: PushRecord, *, force: bool = False
     # First reading after start: show the temperature chip without waiting
     if (new.current_c is None) != (prev.current_c is None):
         return True
+    # Ambient switched on/off in the options, or its first reading arrived
+    if (new.ambient_c is None) != (prev.ambient_c is None):
+        return True
     if new.ts - prev.ts < MIN_PUSH_INTERVAL_S:
         return False
     if (
@@ -232,6 +257,12 @@ def should_push(prev: PushRecord | None, new: PushRecord, *, force: bool = False
     ):
         return True
     if new.progress != prev.progress:
+        return True
+    if (
+        new.ambient_c is not None
+        and prev.ambient_c is not None
+        and abs(new.ambient_c - prev.ambient_c) >= AMBIENT_DELTA_C
+    ):
         return True
     if (
         new.when is not None
@@ -298,13 +329,22 @@ class LiveActivityManager:
     """
 
     def __init__(
-        self, hass, entry_id: str, temp_unit: str, targets: list[str], logger, texts: Texts
+        self,
+        hass,
+        entry_id: str,
+        temp_unit: str,
+        targets: list[str],
+        logger,
+        texts: Texts,
+        *,
+        show_ambient: bool = True,
     ) -> None:
         self._hass = hass
         self._texts = texts
         self._entry_id = entry_id
         self._temp_unit = temp_unit
         self._targets: list[str] = [t for t in targets if t]
+        self._show_ambient = show_ambient
         self._sent: dict[str, PushRecord] = {}
         self._warned: set[str] = set()
         self._lock: asyncio.Lock | None = None  # created lazily on the event loop
@@ -323,6 +363,14 @@ class LiveActivityManager:
     def set_texts(self, texts: Texts) -> None:
         """Use new strings (server language changed); the next refresh picks them up."""
         self._texts = texts
+
+    def set_show_ambient(self, show: bool, monitor, *, now: float | None = None) -> None:
+        """Toggle the ambient temperature (options flow) and update the phone right away."""
+        show = bool(show)
+        if show == self._show_ambient:
+            return
+        self._show_ambient = show
+        self.refresh(monitor, force=True, now=now)
 
     def set_targets(self, targets: list[str], monitor, *, now: float | None = None) -> None:
         """Apply a new target list (options flow) without reloading the entry."""
@@ -415,6 +463,7 @@ class LiveActivityManager:
                     temp_unit=self._temp_unit,
                     rest_peak_c=pred.rest_peak_c,
                     rest_short_c=pred.rest_short_c,
+                    ambient_c=pred.current_ambient if self._show_ambient else None,
                 )
             return states
 
@@ -463,6 +512,7 @@ class LiveActivityManager:
             temp_unit=self._temp_unit,
             rest_peak_c=pred.rest_peak_c,
             rest_short_c=pred.rest_short_c,
+            ambient_c=pred.current_ambient if self._show_ambient else None,
         )
         return states
 

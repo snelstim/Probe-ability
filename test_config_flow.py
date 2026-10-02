@@ -287,6 +287,8 @@ def test_update_listener() -> None:
     monitor = _monitor(hass, entry)
     applied: list = []
     monitor.live_activity.set_targets = lambda targets, mon, **kw: applied.append((targets, mon))
+    ambient: list = []
+    monitor.live_activity.set_show_ambient = lambda show, mon, **kw: ambient.append(show)
     check("fresh monitor: config unchanged", monitor.config_changed is False)
     check("monitor sees three probe slots", len(monitor.predictors) == 3)
 
@@ -295,6 +297,16 @@ def test_update_listener() -> None:
     asyncio.run(probe_ability._async_entry_updated(hass, entry))
     check("options change is applied in place", applied == [(["mobile_app_phone"], monitor)])
     check("options change does not reload", hass.config_entries.reloads == [])
+    check("ambient defaults on when the option is absent", ambient == [True])
+
+    entry.options = types.MappingProxyType({
+        const.CONF_LIVE_ACTIVITY_TARGETS: ["mobile_app_phone"],
+        const.CONF_LIVE_ACTIVITY_AMBIENT: False,
+    })
+    asyncio.run(probe_ability._async_entry_updated(hass, entry))
+    check("ambient toggle is applied in place", ambient == [True, False])
+    check("ambient toggle does not reload", hass.config_entries.reloads == [])
+    applied.pop()
 
     # ⋮ → Reconfigure: entry.data replaced (probe 3 cleared) → reload
     entry.data = types.MappingProxyType(config_flow.reconfigured_data(CURRENT, PROBE_3_CLEARED))

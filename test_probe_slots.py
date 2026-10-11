@@ -111,6 +111,9 @@ _stub("homeassistant.util")
 _stub("homeassistant.util.dt", utcnow=lambda: datetime.now(timezone.utc))
 _stub("homeassistant.components")
 _stub("homeassistant.components.http", StaticPathConfig=_Marker)
+_stub("homeassistant.components.websocket_api", ERR_NOT_FOUND="not_found",
+      websocket_command=lambda schema: (lambda f: f),
+      async_register_command=lambda hass, handler: None, ActiveConnection=object)
 _stub("homeassistant.components.sensor", SensorDeviceClass=_Names(), SensorEntity=SensorEntity)
 _stub("homeassistant.config_entries", ConfigEntry=object)
 _stub(
@@ -124,7 +127,7 @@ _stub("homeassistant.core", HomeAssistant=object, Event=object, ServiceCall=obje
       callback=lambda f: f)
 _stub("homeassistant.exceptions", HomeAssistantError=HomeAssistantError)
 _stub("homeassistant.helpers")
-_stub("homeassistant.helpers.config_validation", string=str,
+_stub("homeassistant.helpers.config_validation", string=str, entity_id=str,
       config_entry_only_config_schema=lambda domain: None)
 _stub("homeassistant.helpers.event", async_call_later=lambda *a, **k: (lambda: None),
       async_track_state_change_event=_track_state_change)

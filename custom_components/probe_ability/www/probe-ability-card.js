@@ -17,6 +17,9 @@
  *  - Circular SVG timer with two display modes:
  *      ⏱ Countdown — ring drains as time passes
  *      🌡 Temp-up  — ring fills as temperature rises toward target
+ *  - Graph view (view: graph, or the toggle on the card): the cook's
+ *    temperature history with a dashed forecast to the target, an uncertainty
+ *    band, the target and pull temperatures and the ETA.
  *
  * Installation (via HACS — recommended):
  *   Add as a Lovelace resource:
@@ -29,6 +32,8 @@
  *   entry_id: <your_entry_id>                               (optional)
  *   probe_layout: vertical | horizontal | grid              (optional)
  *   collapsible: true | false                               (optional)
+ *   view: ring | graph                                      (optional: countdown
+ *                   ring, or temperature history with a forecast)
  *   probe_sensors: [sensor.a, sensor.d]                     (optional: show only
  *                   these probes, named by their sensor entity id)
  */
@@ -250,6 +255,12 @@ const CIRC = 314.16; // 2π × 50
 // Most probes one integration instance can have (internal_sensor … internal_sensor_4).
 const MAX_PROBES = 4;
 
+// Graph view: how often a render may re-fetch the history (the integration
+// records a reading about every 30 s), and a per-page counter that keeps the
+// SVG clip-path ids of several cards apart.
+const GRAPH_REFRESH_MS = 25000;
+let _graphSeq = 0;
+
 // Elements the views attach listeners to.  _morph keeps them across renders
 // only when their identity is unchanged (see _sameIdentity).
 const _INTERACTIVE = "button, select, input, [data-toggle-probe], #cp-ring-container";
@@ -385,6 +396,8 @@ class CookPredictorCard extends HTMLElement {
       ? config.probe_layout
       : "vertical";
     this._collapsible = config.collapsible !== false;
+    // Per-probe history cache for the graph view (see _fetchGraph).
+    this._graphData = {};
     // Per-slot form state: { category, cut, doneness, temp }
     // Key: "combined" or a probe index.
     // Backed by localStorage so selections survive page navigation.
@@ -937,6 +950,7 @@ class CookPredictorCard extends HTMLElement {
   // ── Idle ──────────────────────────────────────────────────────────────
 
   _renderIdle(attrs) {
+    this._graphData = {};   // the next cook starts a new history
     const probeMode = this._probeMode;
     // The integration's probe_count (probe slots in use) is authoritative — a
     // card config listing more sensors than the instance has must not add
@@ -1184,6 +1198,235 @@ class CookPredictorCard extends HTMLElement {
       return { primary, secondary: `${cur} → ${tgt} ${t("stalled")}`, secondaryColor: "var(--error-color)", progress };
     }
     return { primary, secondary: `${cur} → ${tgt}`, progress };
+  }
+
+  // ── Graph view ────────────────────────────────────────────────────────
+  //
+  // `view: graph` swaps the ring for a chart of the cook's temperature history
+  // with a forecast to the target.  The series (too long for sensor attributes)
+  // comes from the integration's probe_ability/history websocket command,
+  // fetched from a render at most every GRAPH_REFRESH_MS and drawn as plain
+  // inline SVG.  The toggle button overrides the configured view for this card
+  // entity — only for as long as the configured value stays what it was, so
+  // changing `view` in the editor always wins.
+
+  get _viewKey() { return `probe_ability_view:${this._config.entity}`; }
+  get _viewBase() { return this._config?.view === "graph" ? "graph" : "ring"; }
+
+  get _view() {
+    try {
+      const o = JSON.parse(localStorage.getItem(this._viewKey) || "null");
+      if (o && o.base === this._viewBase && (o.view === "ring" || o.view === "graph")) return o.view;
+    } catch (e) {}
+    return this._viewBase;
+  }
+
+  _setView(view) {
+    try { localStorage.setItem(this._viewKey, JSON.stringify({ base: this._viewBase, view })); } catch (e) {}
+    this._render();
+  }
+
+  // The ring/graph switch.  `float` pins it to the top-right corner of a
+  // position:relative wrapper (used over the ring); the graph carries it in
+  // its own header row instead.
+  _viewToggle(id, float) {
+    const next = this._view === "graph" ? "ring" : "graph";
+    const label = next === "graph" ? t("switch_to_graph") : t("switch_to_ring");
+    return `<button id="${id}" class="pa-view-toggle" title="${label}" aria-label="${label}"
+        style="${float ? "position:absolute;top:0;right:0;" : ""}background:none;border:none;padding:2px;margin:0;
+               cursor:pointer;color:var(--secondary-text-color);line-height:0;flex-shrink:0;">
+        <ha-icon icon="${next === "graph" ? "mdi:chart-line" : "mdi:timer-outline"}" style="--mdc-icon-size:20px;"></ha-icon>
+      </button>`;
+  }
+
+  // Wire the toggles once (data-wired); what they switch to is read from
+  // data-next at click time, so a kept button never goes stale.
+  _wireViewToggles() {
+    const next = this._view === "graph" ? "ring" : "graph";
+    for (const b of this.querySelectorAll(".pa-view-toggle")) {
+      b.dataset.next = next;
+      if (b.dataset.wired) continue;
+      b.dataset.wired = "1";
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this._setView(b.dataset.next);
+      });
+    }
+  }
+
+  // Last history payload for probe i (null until the first answer).  Starts a
+  // fetch when the cached one is older than GRAPH_REFRESH_MS; the answer
+  // re-renders the card, which finds the cache fresh and does not fetch again.
+  // `combined` (combined mode) lets the backend pick the probe that sets the
+  // shared countdown — the slowest — and says which one it was (data.probe).
+  _fetchGraph(i, combined) {
+    const cache = this._graphData || (this._graphData = {});
+    const key = combined ? "combined" : i;
+    const g = cache[key] || (cache[key] = { data: null, at: 0, busy: false });
+    if (g.busy || Date.now() - g.at < GRAPH_REFRESH_MS || !this._hass?.callWS) return g.data;
+    g.busy = true;
+    g.at = Date.now();   // a failed request backs off for the same interval
+    const msg = { type: "probe_ability/history", entity_id: this._config.entity, probe: i };
+    if (combined) msg.combined = true;
+    this._hass.callWS(msg)
+      .then((data) => { g.data = data; g.failed = false; })
+      .catch(() => { g.failed = !g.data; })   // keep showing the last good series
+      .finally(() => {
+        g.busy = false;
+        // Never rebuild under a form control or an open stop prompt.
+        if (this._view === "graph" && !this._confirmPending && !this._formControlFocused()) this._render();
+      });
+    return g.data;
+  }
+
+  // Graph for probe i.  o = { toggleId, color, pullC, timeRemaining, compact, showEta,
+  //                           combined, caption }
+  // pullC is °C, or a function of the probe slot the data turned out to be for
+  // (combined mode: the backend chooses the probe).  caption names that probe.
+  _graphBlock(i, o) {
+    const g = this._fetchGraph(i, o.combined);
+    const unit = this._tempUnit || "C";
+    const ul = _unitLabel(unit);
+    const compact = !!o.compact;
+    const W = compact ? 230 : 320;
+    const H = compact ? 140 : 170;
+    const toggle = this._viewToggle(o.toggleId);
+    const rd = g && Array.isArray(g.readings) ? g.readings : [];
+    const row = (inner) => `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:24px;">${inner}${toggle}</div>`;
+
+    if (rd.length < 2) {
+      return `${row("<span></span>")}
+        <div style="aspect-ratio:${W}/${H};display:flex;align-items:center;justify-content:center;
+                    font-size:0.8em;color:var(--secondary-text-color);">${this._graphData?.[o.combined ? "combined" : i]?.failed ? t("graph_unavailable") : t("graph_loading")}</div>`;
+    }
+
+    const pullC = typeof o.pullC === "function" ? o.pullC(g.probe ?? i) : o.pullC;
+    const f = (c) => (unit === "F" ? c * 9 / 5 + 32 : c);
+    const num = (n) => n.toFixed(1);
+    const line = (pts) => pts.map(([x, y], k) => `${k ? "L" : "M"}${num(x)} ${num(y)}`).join(" ");
+    const clock = (ts) => new Date(ts * 1000).toLocaleTimeString(_locale, { hour: "2-digit", minute: "2-digit" });
+
+    const fc = g.forecast || null;
+    const t0 = g.start_ts ?? rd[0][0];
+    const tNow = rd[rd.length - 1][0];
+    const tEnd = Math.max(fc ? fc.band[fc.band.length - 1][0] : 0, tNow + Math.max(300, (tNow - t0) * 0.08));
+    const span = Math.max(tEnd - t0, 1);
+    const L = 30, R = 8, T = 8, B = 20;
+    const pw = W - L - R, ph = H - T - B;
+    const X = (ts) => L + ((ts - t0) / span) * pw;
+
+    // Target in force over time (it can change mid-cook): [[elapsed_s, °C], …].
+    const tgt = g.target_history && g.target_history.length ? g.target_history : [[0, g.target_temp]];
+    const vals = rd.map((r) => f(r[1])).concat(tgt.map((h) => f(h[1])));
+    if (pullC != null) vals.push(f(pullC));
+    let lo = Math.min(...vals), hi = Math.max(...vals);
+    const step = [1, 2, 5, 10, 20, 25, 50, 100].find((s) => s >= Math.max(hi - lo, 10) / 4) || 100;
+    lo = Math.floor(lo / step) * step;
+    hi = Math.ceil(hi / step) * step;
+    if (hi - lo < step) hi = lo + step;
+    const Y = (v) => T + (1 - (v - lo) / (hi - lo)) * ph;
+
+    const label = "font-size:9px;fill:var(--secondary-text-color);";
+    let grid = "";
+    for (let v = lo; v <= hi + 1e-9; v += step) {
+      grid += `<line x1="${L}" y1="${num(Y(v))}" x2="${W - R}" y2="${num(Y(v))}" stroke="var(--divider-color)" stroke-width="0.5"/>
+        <text x="${L - 4}" y="${num(Y(v))}" text-anchor="end" dominant-baseline="middle" style="${label}">${Math.round(v)}</text>`;
+    }
+
+    // Target: a step line, flat out to the right edge.
+    let tp = "";
+    tgt.forEach((h, k) => {
+      const x = X(t0 + h[0]), y = Y(f(h[1]));
+      tp += k ? `H${num(x)} V${num(y)} ` : `M${num(x)} ${num(y)} `;
+    });
+    tp += `H${num(L + pw)}`;
+    const yTgt = Y(f(g.target_temp));
+    // Target / pull labels sit where the current target starts (the left edge
+    // unless it changed mid-cook), clear of the ETA marker at the right.
+    const lblX = X(t0 + tgt[tgt.length - 1][0]) + 3;
+
+    const showAmb = rd.some((r) => f(r[2]) <= hi);
+    const cid = `pa-clip-${this._gid || (this._gid = ++_graphSeq)}-${o.toggleId}`;
+    const pullY = pullC != null && pullC < g.target_temp ? Y(f(pullC)) : null;
+
+    let forecast = "";
+    let xLabels = "";
+    const startX = X(t0);
+    if (fc) {
+      const up = fc.band.map((b) => [X(b[0]), Y(f(b[2]))]);
+      const dn = fc.band.map((b) => [X(b[0]), Y(f(b[1]))]).reverse();
+      const ex = X(fc.eta_ts);
+      // The earliest / latest forecast: the band's edges, each drawn up to the
+      // moment it reaches the target.
+      const exEarly = X(fc.early_ts), exLate = X(fc.late_ts);
+      const earlyEdge = fc.band.filter((b) => b[0] < fc.early_ts).map((b) => [X(b[0]), Y(f(b[2]))]);
+      earlyEdge.push([exEarly, yTgt]);
+      const edge = (d) => `<path d="${d}" fill="none" stroke="${o.color}" stroke-opacity="0.6" stroke-width="1" stroke-dasharray="2 3"/>`;
+      // The finish window itself: a bar on the target line from the earliest to the latest time.
+      const window_ = `<line x1="${num(exEarly)}" y1="${num(yTgt)}" x2="${num(exLate)}" y2="${num(yTgt)}"
+            stroke="${o.color}" stroke-opacity="0.5" stroke-width="6" stroke-linecap="round"/>`;
+      forecast = `
+        <path d="${line(up)} ${line(dn).replace(/^M/, "L")} Z" fill="${o.color}" fill-opacity="0.2" stroke="none"/>
+        ${edge(line(earlyEdge))}${edge(line(dn))}
+        ${window_}
+        <path d="${line(fc.curve.map((p) => [X(p[0]), Y(f(p[1]))]))}" fill="none" stroke="${o.color}"
+              stroke-width="2" stroke-dasharray="5 4" stroke-linecap="round"/>
+        <circle cx="${num(ex)}" cy="${num(yTgt)}" r="3.5" fill="var(--card-background-color, #fff)" stroke="${o.color}" stroke-width="2"/>`;
+      const endAnchor = ex > W - 30 ? "end" : "middle";
+      xLabels += `<text x="${num(Math.min(ex, W - R))}" y="${H - 5}" text-anchor="${endAnchor}" style="${label}font-weight:600;">${clock(fc.eta_ts)}</text>`;
+      if (ex - startX > 70) xLabels += `<text x="${L}" y="${H - 5}" text-anchor="start" style="${label}">${clock(t0)}</text>`;
+    } else {
+      xLabels += `<text x="${L}" y="${H - 5}" text-anchor="start" style="${label}">${clock(t0)}</text>`;
+    }
+
+    const cur = rd[rd.length - 1][1];
+    const nowX = X(tNow), nowY = Y(f(cur));
+    const eta = fc ? clock(fc.eta_ts) : "";
+    const aria = fc
+      ? t("graph_aria_eta", { temp: `${Math.round(f(cur))}${ul}`, target: `${Math.round(f(g.target_temp))}${ul}`, eta })
+      : t("graph_aria", { temp: `${Math.round(f(cur))}${ul}`, target: `${Math.round(f(g.target_temp))}${ul}` });
+
+    // The ambient line is faint and unnamed otherwise: label it beside "now" when it is in view.
+    const ambNow = f(rd[rd.length - 1][2]);
+    const ambLabel = showAmb && ambNow >= lo && ambNow <= hi
+      ? `<text x="${num(nowX - 6)}" y="${num(Y(ambNow) - 3)}" text-anchor="end" style="${label}opacity:0.8;">${t("graph_ambient")}</text>`
+      : "";
+
+    const doneAt = o.showEta === false ? "" : (eta || etaFromMinutes(o.timeRemaining));
+    const range = fc
+      ? `<div style="text-align:center;font-size:0.72em;color:var(--secondary-text-color);margin-top:2px;">${t("graph_range", { min: clock(fc.early_ts), max: clock(fc.late_ts) })}</div>`
+      : "";
+    // Header row, left of the view toggle: which probe a combined-mode graph follows.
+    const caption = o.caption && g.probe != null
+      ? `<span style="min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:0.72em;color:var(--secondary-text-color);">${t("graph_slowest", { name: this._probeName(g.probe) })}</span>`
+      : "<span></span>";
+    const summary = o.timeRemaining
+      ? `<div style="text-align:center;margin-top:4px;font-size:${compact ? "0.85em" : "0.95em"};">
+           <strong style="font-size:1.15em;">${formatTime(o.timeRemaining)}</strong>
+           <span style="color:var(--secondary-text-color);">${t("remaining")}${doneAt ? ` · ${t("done_at", { eta: doneAt })}` : ""}</span>
+         </div>`
+      : `<div style="text-align:center;margin-top:4px;font-size:0.85em;color:var(--secondary-text-color);">${t("estimating")}</div>`;
+
+    return `
+      ${row(caption)}
+      <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${aria}" style="display:block;width:100%;height:auto;">
+        <defs><clipPath id="${cid}"><rect x="${L}" y="${T}" width="${pw}" height="${ph}"/></clipPath></defs>
+        ${grid}
+        ${showAmb ? `<path d="${line(rd.map((r) => [X(r[0]), Y(f(r[2]))]))}" fill="none"
+                           stroke="var(--secondary-text-color)" stroke-opacity="0.4" stroke-width="1" clip-path="url(#${cid})"/>` : ""}
+        <path d="${tp}" fill="none" stroke="var(--success-color)" stroke-width="1.2" stroke-dasharray="4 3"/>
+        <text x="${num(lblX)}" y="${num(yTgt - 3)}" text-anchor="start" style="${label}fill:var(--success-color);">${t("graph_target")} ${Math.round(f(g.target_temp))}°</text>
+        ${pullY != null ? `
+          <line x1="${L}" y1="${num(pullY)}" x2="${W - R}" y2="${num(pullY)}" stroke="var(--warning-color)" stroke-width="1" stroke-dasharray="2 3"/>
+          <text x="${num(lblX)}" y="${num(pullY + 9)}" text-anchor="start" style="${label}fill:var(--warning-color);">${t("graph_pull")} ${Math.round(f(pullC))}°</text>` : ""}
+        ${forecast}
+        <path d="${line(rd.map((r) => [X(r[0]), Y(f(r[1]))]))}" fill="none" stroke="${o.color}"
+              stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+        <circle cx="${num(nowX)}" cy="${num(nowY)}" r="3.5" fill="${o.color}"/>
+        ${ambLabel}
+        ${xLabels}
+      </svg>
+      ${summary}${range}`;
   }
 
   // One probe tile.
@@ -1611,37 +1854,8 @@ class CookPredictorCard extends HTMLElement {
     const nextLabel = timerMode === "countdown" ? t("switch_to_temp") : t("switch_to_countdown");
     const combinedPresetName = this._getActivePresetName("combined");
 
-    this._html = `
-      <ha-card>
-        <div style="padding:20px;">
-
-          <!-- Header: icon+title on left, target+confidence on right (mirrors individual tiles) -->
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-            <div style="display:flex;align-items:center;gap:10px;">
-              <ha-icon icon="${shouldPull ? "mdi:fire-off" : phaseIcon}"
-                style="color:${shouldPull ? "var(--warning-color)" : phaseColor};--mdc-icon-size:26px;"></ha-icon>
-              <div>
-                <div style="font-size:1.1em;font-weight:500;">Probe-ability</div>
-                ${shouldPull
-                  ? `<div style="font-size:0.78em;color:var(--warning-color);font-weight:600;">
-                       ${t("remove_from_heat")}
-                     </div>`
-                  : combinedPresetName
-                    ? `<div style="font-size:0.78em;color:var(--secondary-text-color);">
-                         ${combinedPresetName}
-                       </div>`
-                    : ""}
-              </div>
-            </div>
-            <div style="text-align:right;font-size:0.8em;color:var(--secondary-text-color);line-height:1.6;">
-              <div>${attrs.target_temp != null ? `${_toDisp(attrs.target_temp, _unit)}${_unitLabel(_unit)}` : "?"}</div>
-              ${!shouldPull && confDots
-                ? `<div style="letter-spacing:2px;">${confDots}${modelBadge}</div>`
-                : ""}
-            </div>
-          </div>
-
-          <!-- SVG circular timer — tap anywhere to toggle mode -->
+    // Ring (the default) or the history graph; combined mode follows probe 1.
+    const ringHtml = `
           <div id="cp-ring-container"
             title="${nextLabel}"
             style="position:relative;display:flex;flex-direction:column;align-items:center;
@@ -1673,7 +1887,48 @@ class CookPredictorCard extends HTMLElement {
               </text>
             </svg>
             ${etaDisplay ? `<div style="font-size:0.95em;color:var(--secondary-text-color);margin-top:2px;">${t("done_at", { eta: etaDisplay })}</div>` : ""}
+          </div>`;
+    // Combined mode's countdown is the slowest probe's, so the graph follows that probe.
+    const visual = this._view === "graph"
+      ? this._graphBlock(this._entityProbeIndex(attrs), {
+          toggleId: "cp-view-toggle", color: ringColor, timeRemaining, combined: true,
+          pullC: (idx) => (idx > 0 ? attrs[`probe_${idx + 1}_pull_temp`] ?? null : pullTemp),
+          caption: (attrs.probe_active || []).filter(Boolean).length > 1,
+        })
+      : `<div style="position:relative;">${this._viewToggle("cp-view-toggle", true)}${ringHtml}</div>`;
+
+    this._html = `
+      <ha-card>
+        <div style="padding:20px;">
+
+          <!-- Header: icon+title on left, target+confidence on right (mirrors individual tiles) -->
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <ha-icon icon="${shouldPull ? "mdi:fire-off" : phaseIcon}"
+                style="color:${shouldPull ? "var(--warning-color)" : phaseColor};--mdc-icon-size:26px;"></ha-icon>
+              <div>
+                <div style="font-size:1.1em;font-weight:500;">Probe-ability</div>
+                ${shouldPull
+                  ? `<div style="font-size:0.78em;color:var(--warning-color);font-weight:600;">
+                       ${t("remove_from_heat")}
+                     </div>`
+                  : combinedPresetName
+                    ? `<div style="font-size:0.78em;color:var(--secondary-text-color);">
+                         ${combinedPresetName}
+                       </div>`
+                    : ""}
+              </div>
+            </div>
+            <div style="text-align:right;font-size:0.8em;color:var(--secondary-text-color);line-height:1.6;">
+              <div>${attrs.target_temp != null ? `${_toDisp(attrs.target_temp, _unit)}${_unitLabel(_unit)}` : "?"}</div>
+              ${!shouldPull && confDots
+                ? `<div style="letter-spacing:2px;">${confDots}${modelBadge}</div>`
+                : ""}
+            </div>
           </div>
+
+          <!-- Ring (tap to toggle mode) or history graph -->
+          ${visual}
 
           <!-- Remove from heat banner -->
           ${shouldPull ? `
@@ -1742,14 +1997,17 @@ class CookPredictorCard extends HTMLElement {
       </ha-card>`;
 
     const ring = this.querySelector("#cp-ring-container");
-    ring.dataset.next = nextMode;   // re-set every render; read when clicked
-    if (!ring.dataset.wired) {
-      ring.dataset.wired = "1";
-      ring.addEventListener("click", () => {
-        localStorage.setItem("probe_ability_timer_mode", ring.dataset.next);
-        this._render();
-      });
+    if (ring) {
+      ring.dataset.next = nextMode;   // re-set every render; read when clicked
+      if (!ring.dataset.wired) {
+        ring.dataset.wired = "1";
+        ring.addEventListener("click", () => {
+          localStorage.setItem("probe_ability_timer_mode", ring.dataset.next);
+          this._render();
+        });
+      }
     }
+    this._wireViewToggles();
     this._addStopConfirm(this.querySelector("#cp-stop"), () => this._callStop(), t("yes_cancel"));
   }
 
@@ -1945,7 +2203,7 @@ class CookPredictorCard extends HTMLElement {
 
         const eta = etaFromMinutes(pd.timeRemaining);
 
-        contentBlock = `
+        const ringHtml = `
           <svg viewBox="0 0 120 120" width="100" height="100"
                style="display:block;margin:6px auto 0;">
             <circle cx="60" cy="60" r="50" fill="none"
@@ -1964,9 +2222,19 @@ class CookPredictorCard extends HTMLElement {
               style="font-size:9px;fill:var(--secondary-text-color);">
               ${centerSecondary}
             </text>
-          </svg>
+          </svg>`;
+        const graphView = this._view === "graph";
+        const visual = graphView
+          ? this._graphBlock(i, {
+              toggleId: `cp-view-toggle-${i}`, color: ringColor, pullC: pd.pullTemp,
+              timeRemaining: pd.timeRemaining, compact: true, showEta: false,
+            })
+          : `<div style="position:relative;">${this._viewToggle(`cp-view-toggle-${i}`, true)}${ringHtml}</div>`;
 
-          ${tempPct != null ? `
+        contentBlock = `
+          ${visual}
+
+          ${tempPct != null && !graphView ? `
             <div style="margin-top:10px;">
               <div style="display:flex;justify-content:space-between;
                           font-size:0.8em;color:var(--secondary-text-color);margin-bottom:3px;">
@@ -2092,6 +2360,8 @@ class CookPredictorCard extends HTMLElement {
           ${this._tilesContainer(probeSlots, shown)}
         </div>
       </ha-card>`;
+
+    this._wireViewToggles();
 
     // Stop / cancel buttons — each gets its own confirmation prompt
     this.querySelectorAll(".cp-stop-probe").forEach((btn) => {
@@ -2294,6 +2564,13 @@ function _buildEditorSchema() {
             ],
         } } },
         { name: "collapsible",    tkey: "ed_collapsible", selector: { boolean: {} } },
+        { name: "view",           tkey: "ed_view",    selector: { select: {
+            mode: "dropdown",
+            options: [
+              { value: "ring",  label: t("view_ring") },
+              { value: "graph", label: t("view_graph") },
+            ],
+        } } },
       ],
     },
     // One section per probe: its target-temp helper and its sensor.
@@ -2329,6 +2606,7 @@ class CookPredictorCardEditor extends HTMLElement {
       entry_id:       cfg.entry_id       || "",
       probe_layout:   cfg.probe_layout   || "",
       collapsible:    cfg.collapsible !== false,
+      view:           cfg.view === "graph" ? "graph" : "ring",
     };
     for (let i = 0; i < MAX_PROBES; i++) {
       data[_targetKey(i)] = cfg[_targetKey(i)] || "";
@@ -2352,6 +2630,9 @@ class CookPredictorCardEditor extends HTMLElement {
     // Collapsible is on by default: only persist an explicit "off".
     if (data.collapsible === false) cfg.collapsible = false;
     else delete cfg.collapsible;
+    // The ring is the default: only persist an explicit "graph".
+    if (data.view === "graph") cfg.view = "graph";
+    else delete cfg.view;
     delete cfg.eta_entity;   // retired option — tidy it out of edited configs
     // probe_sensors is positional — entry i belongs to probe i+1 — so an
     // unused slot stays null rather than shifting probe 4 down to "probe 2".
@@ -2407,7 +2688,7 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: "probe-ability-card",
   name: "Probe-ability",
-  description: "Predictive meat thermometer card with multi-probe support, preset dropdown, and circular timer.",
+  description: "Predictive meat thermometer card with multi-probe support, preset dropdown, circular timer and a history-with-forecast graph.",
   preview: true,
   version: CARD_VERSION,
 });

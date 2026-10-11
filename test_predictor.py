@@ -336,6 +336,123 @@ def check_collection_window() -> None:
     print(f"All {checks} checks passed.")
 
 
+def check_forecast_curve() -> None:
+    """forecast_curve(): pure, anchored on the published ETA, shaped by Newton's law."""
+    import json
+    checks = 0
+
+    def ok(cond, what):
+        nonlocal checks
+        assert cond, what
+        checks += 1
+
+    def cook(ambient=180.0, minutes=14, target=74.0):
+        p = CookPredictor(target_temp=target)
+        for i in range(minutes * 2):
+            now = i * 30.0
+            temp = ambient - (ambient - 5.0) * math.exp(-0.0004 * now)
+            p.add_reading(now, temp, ambient)
+            p.predict()
+        return p
+
+    p = CookPredictor(target_temp=74.0)
+    ok(p.forecast_curve() is None, "no readings -> None")
+    p.add_reading(0.0, 5.0, 180.0)
+    p.predict()
+    ok(p.forecast_curve() is None, "collecting -> None")
+
+    p = cook()
+    last = p.predict()
+    ok(last.time_remaining_seconds is not None, "simulated cook has an ETA")
+    before = json.dumps(p.to_dict(), sort_keys=True)
+    fc = p.forecast_curve()
+    ok(json.dumps(p.to_dict(), sort_keys=True) == before, "forecast_curve does not mutate predictor state")
+    ok(fc is not None, "mid-cook forecast exists")
+    now_ts, cur, amb = p.readings[-1]
+    curve = fc["curve"]
+    ok(abs(curve[0][0] - now_ts) < 1 and abs(curve[0][1] - cur) < 0.05, "curve starts at the latest reading")
+    ok(abs(curve[-1][1] - 74.0) < 0.05, "curve ends at the target")
+    ok(abs(curve[-1][0] - fc["eta_ts"]) < 1, "curve ends at the ETA")
+    ok(all(b[1] >= a[1] - 1e-6 for a, b in zip(curve, curve[1:])), "curve is monotonic rising")
+    ok(all(c[1] <= amb for c in curve), "curve stays below the ambient")
+    served = p._serve_stale(now_ts)
+    ok(abs((fc["eta_ts"] - now_ts) - served) < 1, "ETA matches the one the sensor serves")
+    # Newton shape: heating slows as the gap to the ambient closes
+    half = len(curve) // 2
+    ok(curve[half][1] - curve[0][1] > curve[-1][1] - curve[half][1], "curve flattens toward the target")
+    band = fc["band"]
+    ok(fc["early_ts"] <= fc["eta_ts"] - 60.0 + 1e-6, "range reaches at least 1 min before the ETA")
+    ok(fc["late_ts"] >= fc["eta_ts"] + 60.0 - 1e-6, "range reaches at least 1 min after the ETA")
+    ok(all(lo <= hi + 1e-6 for _, lo, hi in band), "band lower edge never above upper edge")
+    ok(abs(band[-1][0] - fc["late_ts"]) < 1, "band ends at the latest ETA")
+    ok(abs(band[-1][1] - 74.0) < 0.05, "late edge reaches the target at the band's end")
+    ok(all(lo - 0.05 <= curve[0][1] <= hi + 0.05 for _, lo, hi in band[:1]), "band starts around the current temp")
+    first_hi = next(i for i, (_, _, hi) in enumerate(band) if hi >= 74.0 - 0.05)
+    ok(band[first_hi][0] < fc["eta_ts"] + 1 and first_hi < len(band) - 1, "early edge reaches the target before the ETA")
+    ok(all(lo < 74.0 - 0.05 for _, lo, _ in band[:-1]), "late edge stays below the target until the band ends")
+
+    # Earliest / latest published ETA drive the band
+    def with_etas(offsets):
+        """A mid-cook predictor whose recent published ETAs sit at now + offsets (s)."""
+        r = cook()
+        now = r.readings[-1][0]
+        r._recent_etas = [(now - 30.0 * (len(offsets) - i), now + off) for i, off in enumerate(offsets)]
+        r._last_stable_remaining, r._last_stable_ts = 1000.0, now   # current ETA = now + 1000
+        return r, now
+
+    r, now = with_etas([880.0, 1100.0, 940.0, 1010.0])
+    f2 = r.forecast_curve()
+    ok(abs(f2["early_ts"] - (now + 880.0)) < 0.1, "early_ts is the earliest recent ETA")
+    ok(abs(f2["late_ts"] - (now + 1100.0)) < 0.1, "late_ts is the latest recent ETA")
+    ok(abs(f2["eta_ts"] - (now + 1000.0)) < 0.1, "eta_ts stays the published ETA")
+    ok(abs(f2["band"][-1][0] - (now + 1100.0)) < 0.1, "band runs to the latest ETA")
+    r, now = with_etas([1000.0, 1000.0, 1000.0])
+    f3 = r.forecast_curve()
+    ok(abs((f3["eta_ts"] - f3["early_ts"]) - 60.0) < 0.1 and abs((f3["late_ts"] - f3["eta_ts"]) - 60.0) < 0.1,
+       "steady ETAs still get the +/-1 min floor")
+    r, now = with_etas([100.0, 9000.0])
+    f4 = r.forecast_curve()
+    ok(abs((f4["eta_ts"] - f4["early_ts"]) - 500.0) < 0.1, "range is capped at 50 % earlier than the ETA")
+    ok(abs((f4["late_ts"] - f4["eta_ts"]) - 500.0) < 0.1, "range is capped at 50 % later than the ETA")
+    r, now = with_etas([1500.0, 1600.0])   # every recent ETA is later than the current one
+    f5 = r.forecast_curve()
+    ok(f5["early_ts"] <= f5["eta_ts"] <= f5["late_ts"], "current ETA is always inside the range")
+    ok(abs(f5["late_ts"] - (now + 1500.0)) < 0.1, "capped at 150 % of the remaining time")
+
+    # Ambient barely above the target -> straight line
+    q = CookPredictor(target_temp=74.0)
+    q._last_stable_remaining, q._last_stable_ts = 1200.0, 0.0
+    for i in range(12):
+        q.add_reading(float(i * 30), 60.0 + i * 0.3, 74.5)
+    q._last_stable_ts = q.readings[-1][0]
+    fc2 = q.forecast_curve()
+    ok(fc2 is not None, "near-ambient target still forecasts")
+    c2 = fc2["curve"]
+    d1 = c2[1][1] - c2[0][1]
+    d2 = c2[-1][1] - c2[-2][1]
+    ok(abs(d1 - d2) < 0.02, "linear fallback has constant slope")
+
+    ok(abs(p.remaining_seconds() - served) < 1e-6, "remaining_seconds is the published estimate")
+    ok(json.dumps(p.to_dict(), sort_keys=True) == before, "remaining_seconds does not mutate state")
+
+    # Done / rest / stale -> None
+    done = CookPredictor(target_temp=74.0)
+    done._last_stable_remaining, done._last_stable_ts = 600.0, 0.0
+    done.add_reading(0.0, 74.2, 180.0)
+    ok(done.forecast_curve() is None, "at target -> None")
+    done._done_latched = True
+    ok(done.remaining_seconds() is None, "done -> no remaining")
+    ok(CookPredictor(target_temp=74.0).remaining_seconds() is None, "no readings -> no remaining")
+    stale = cook()
+    stale._last_stable_ts = stale.readings[-1][0] - 3600.0
+    ok(stale.forecast_curve() is None, "stale ETA -> None")
+    resting = cook()
+    resting._rest_pulled_at = 70.0
+    ok(resting.forecast_curve() is None, "resting -> None")
+
+    print(f"All {checks} checks passed.")
+
+
 if __name__ == "__main__":
     print("\n━━━ TEST 1: Normal roast (no stall) ━━━\n")
     simulate_cook(
@@ -369,3 +486,6 @@ if __name__ == "__main__":
 
     print("\n━━━ TEST 7: dynamic data-collection window (asserts) ━━━\n")
     check_collection_window()
+
+    print("\n━━━ TEST 8: forecast curve for the graph view (asserts) ━━━\n")
+    check_forecast_curve()

@@ -61,6 +61,7 @@ from .const import (
 from .live_activity import LiveActivityManager
 from .predictor import CookPredictor
 from .texts import Texts
+from .websocket_api import async_register as _async_register_websocket
 
 
 def _to_celsius(value: float, unit: str) -> float:
@@ -83,7 +84,8 @@ _URL_BASE = "/probe_ability"
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """Register static files for the Lovelace card."""
+    """Register static files for the Lovelace card and the graph's websocket command."""
+    _async_register_websocket(hass)
     paths = [
         StaticPathConfig(f"{_URL_BASE}/{fname}", str(_WWW_DIR / fname), True)
         for fname in ("probe-ability-card.js", "cook_presets.json", "probe-ability-icon.svg")

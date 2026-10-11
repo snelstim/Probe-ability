@@ -176,6 +176,7 @@ class CookPredictor:
         self._eta_history_min = 4  # need this many fresh ETAs before confidence can rise
         self._eta_std_high = 90.0  # ETA std-dev (s) below which confidence may be high
         self._eta_std_medium = 420.0  # ...below which confidence may be medium
+        self._eta_band_min_s = 60.0  # forecast band is at least this far either side of the ETA
         self._linear_max_seconds = 4 * 3600  # linear ETA beyond this = rate is noise
         self._jump_reject_limit = 4  # consecutive implausible jumps before accepting
         self._jump_rejects = 0
@@ -240,6 +241,90 @@ class CookPredictor:
             return None
         short = self._target_temp - self._rest_peak
         return round(short, 1) if short > self._done_tolerance_c else None
+
+    def remaining_seconds(self) -> float | None:
+        """Seconds to the target as the sensor currently publishes them.
+
+        Pure (unlike predict()): the last stable estimate aged to the newest
+        reading.  None while collecting, done, or when the estimate is stale.
+        """
+        if not self.readings or self._done_latched:
+            return None
+        return self._serve_stale(self.readings[-1][0])
+
+    def forecast_curve(self, points: int = 40) -> dict | None:
+        """Projected temperature trajectory from the latest reading to the target.
+
+        Pure: reads the ETA predict() already published (``_serve_stale`` with
+        the newest reading's timestamp) instead of calling predict(), which
+        mutates smoothing state.  The graph therefore always agrees with the
+        sensor, whichever model (ML or physics) produced the ETA.
+
+        The shape is Newton's law with k solved so the curve reaches the target
+        exactly at the ETA — it flattens as the meat nears the ambient.  When
+        the ambient is too close to the target (the linear-estimate case) it is
+        a straight line.  The band is the same curve solved for the earliest and
+        the latest finish time published over the last ``_eta_history_seconds``
+        (the ETAs the card actually showed, smoothed), widened to at least ±1 min
+        and capped at ±50 % of the time remaining.
+
+        Returns None while there is nothing to forecast (collecting, done,
+        resting, no fresh ETA).  Otherwise::
+
+            {"eta_ts", "early_ts", "late_ts",
+             "curve": [[ts, c]], "band": [[ts, lo_c, hi_c]]}
+
+        ``band`` runs to ``late_ts``; ``curve`` stops at the ETA.
+        """
+        if not self.readings or self._done_latched or self._rest_pulled_at is not None:
+            return None
+        now_ts, current, ambient = self.readings[-1]
+        target = self._target_temp
+        if current >= target - self._done_tolerance_c:
+            return None
+        remaining = self._serve_stale(now_ts)
+        if remaining is None or remaining <= 0:
+            return None
+
+        # Earliest / latest finish time the card has shown recently (always
+        # including the current one), as seconds from now.
+        etas = [e for t, e in self._recent_etas if t >= now_ts - self._eta_history_seconds]
+        etas.append(now_ts + remaining)
+        early = max(min(min(etas) - now_ts, remaining - self._eta_band_min_s), 0.5 * remaining)
+        late = min(max(max(etas) - now_ts, remaining + self._eta_band_min_s), 1.5 * remaining)
+
+        gap_now = ambient - current
+        gap_target = ambient - target
+        curved = gap_target > 1.0 and gap_now > gap_target
+
+        def temp_at(t: float, reach_s: float) -> float:
+            """Temperature t seconds from now on a curve that hits the target after reach_s."""
+            if t >= reach_s:
+                return target
+            if curved:
+                k = -math.log(gap_target / gap_now) / reach_s
+                return ambient - gap_now * math.exp(-k * t)
+            return current + (target - current) * t / reach_s
+
+        points = max(int(points), 2)
+        curve = [
+            [round(now_ts + remaining * i / (points - 1), 1),
+             round(temp_at(remaining * i / (points - 1), remaining), 2)]
+            for i in range(points)
+        ]
+        band = [
+            [round(now_ts + late * i / (points - 1), 1),
+             round(temp_at(late * i / (points - 1), late), 2),    # slower arrival = lower edge
+             round(temp_at(late * i / (points - 1), early), 2)]   # faster arrival = upper edge
+            for i in range(points)
+        ]
+        return {
+            "eta_ts": round(now_ts + remaining, 1),
+            "early_ts": round(now_ts + early, 1),
+            "late_ts": round(now_ts + late, 1),
+            "curve": curve,
+            "band": band,
+        }
 
     def add_reading(
         self, timestamp: float, internal_temp: float, ambient_temp: float

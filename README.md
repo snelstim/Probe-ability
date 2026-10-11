@@ -116,6 +116,7 @@ entity: sensor.probe_ability_time_remaining
 | `target_temp_entity_4` | No | Target-temp `input_number` for **probe 4** (individual mode). |
 | `probe_layout` | No | How individual-mode probe tiles are arranged: `vertical` (default), `horizontal` or `grid`. See [Probe tile layout](#probe-tile-layout). |
 | `collapsible` | No | `true` (default) gives every probe tile a summary header that folds the tile open or closed; `false` keeps all tiles open. See [Probe tile layout](#probe-tile-layout). |
+| `view` | No | `ring` (default) shows the countdown / temperature ring; `graph` shows the cook's temperature history with a forecast to the target instead. A button on the card switches between the two. See [Graph view](#graph-view). |
 
 #### How each option works in detail
 
@@ -133,7 +134,8 @@ The card hides any probe whose sensor is `unavailable`, `unknown`, or returning 
 
 #### Linking the target temperature
 
-If you also plot your cook on a history graph, that graph's target line usually needs an
+If you also plot your cook on a separate history graph (the card's own [Graph view](#graph-view)
+needs no helper — it knows the target), that graph's target line usually needs an
 `input_number` helper — which means keeping the target in two places and syncing them by hand.
 Set `target_temp_entity` to that `input_number` to make it the single source of truth:
 
@@ -235,6 +237,27 @@ collapsible: false
 ```
 
 Combined mode is unaffected — it always shows a single tile.
+
+### Graph view
+
+Set `view: graph` (visual editor → **General** → *Cook display*) to replace the ring with a chart of the cook so far and where it is heading:
+
+```yaml
+type: custom:probe-ability-card
+entity: sensor.probe_ability_time_remaining
+view: graph
+```
+
+- **Solid line** — the probe's temperature since the cook started; the dot is now. A faint line shows the ambient (oven / smoker) temperature while it is within the chart's range.
+- **Dashed curve** — the forecast, from now to the predicted finish, with the **ETA** marked on the time axis. The shaded band shows the **earliest and latest forecast**: its two dotted edges are the forecast curves for the earliest and the latest finish time the card has predicted over the last 10 minutes, the thick bar on the target line marks that finish window, and the exact times are written under the chart (*Earliest 10:37 PM · latest 10:56 PM*). A steady cook has a narrow window and a noisy one a wide window; the window is never narrower than ±1 minute or wider than ±50 % of the time remaining.
+- **Dashed lines** — the **target** (it steps if you change the target mid-cook) and, once a heating rate is known, the **pull** temperature.
+- The time remaining and "done at" time sit under the chart, as the ring's centre does.
+
+A small button in the corner of the card (or of each probe tile in individual mode) switches between graph and ring; the choice is remembered in the browser for that card until you change `view` in the card configuration. The graph is shown while a probe is cooking — not while it is collecting data or after it is done.
+
+**Forecast curve.** The forecast always ends at the ETA the card and the `time_remaining` sensor already show, whichever prediction model produced it. Between now and then it follows Newton's law of heating — rising quickly while the meat is cold and flattening as it nears the cooker temperature — and falls back to a straight line when the cooker is barely hotter than the target. The history comes from a read-only websocket command, `probe_ability/history` (`entity_id`, `probe`, optional `combined` to follow the slowest probe), which returns the recorded readings (thinned to about 300 points), the target history and the forecast; temperatures are in °C.
+
+**Combined mode** follows the probe that sets the countdown — the slowest one (usually the coldest), the same rule the `time_remaining` sensor uses, ignoring probes that are finished, stale or still collecting data — so the forecast always matches the time remaining shown. When several probes are cooking, a line under the chart says which one it is following; it can switch if another probe becomes the slowest.
 
 ### Probe availability
 
@@ -689,6 +712,12 @@ Test the Reconfigure flow and the config-entry update listener:
 
 ```bash
 python3 test_config_flow.py
+```
+
+Test the graph view's websocket command (history thinning, forecast payload):
+
+```bash
+python3 test_history_ws.py
 ```
 
 ---

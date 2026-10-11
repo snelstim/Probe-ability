@@ -145,7 +145,21 @@
         "layout_vertical": "Vertical — stacked",
         "layout_horizontal": "Horizontal — side by side",
         "layout_grid": "Grid — 2 columns",
-        "ed_collapsible": "Collapsible tiles — tap a probe header to open or close it"
+        "ed_collapsible": "Collapsible tiles — tap a probe header to open or close it",
+        "ed_view": "Cook display",
+        "view_ring": "Ring — countdown timer",
+        "view_graph": "Graph — history with forecast",
+        "switch_to_graph": "Show temperature graph",
+        "switch_to_ring": "Show countdown ring",
+        "graph_target": "Target",
+        "graph_pull": "Pull",
+        "graph_ambient": "Ambient",
+        "graph_loading": "Loading history…",
+        "graph_unavailable": "History is not available",
+        "graph_range": "Earliest {min} · latest {max}",
+        "graph_slowest": "Showing the slowest probe: {name}",
+        "graph_aria": "Temperature history and forecast: now {temp}, target {target}",
+        "graph_aria_eta": "Temperature history and forecast: now {temp}, target {target}, done about {eta}"
       }
     },
     "preset_category": {

@@ -2,7 +2,7 @@
 
 Two GradientBoostingRegressor ensembles (raw minutes / log-minutes) are compiled
 into ml_model_code.py and blended there on degrees-to-go, so score() returns
-plain minutes.  The shipped model was trained on 217 real cooks (Meater exports,
+plain minutes.  The shipped model was trained on 253 real cooks (Meater exports,
 Probe-ability exports and community-shared cooks); the README's "Prediction
 model" section carries the current numbers, and retrain.py in the
 probe-ability-training repository builds it.
@@ -32,6 +32,7 @@ _LOGGER = logging.getLogger(__name__)
 
 _CATEGORY_ENC: dict[str, int] = {
     "beef": 0, "fish": 1, "lamb": 2, "other": 3, "pork": 4, "poultry": 5,
+    "bread": 6,   # appended: existing codes unchanged
 }
 _ANIMAL_ENC: dict[str, int] = {
     "beef": 0, "chicken": 1, "cod": 2, "duck": 3, "lamb": 4,
@@ -40,6 +41,7 @@ _ANIMAL_ENC: dict[str, int] = {
 _CUT_TYPE_ENC: dict[str, int] = {
     "chicken": 0, "chop": 1, "cod": 2, "duck": 3, "other": 4,
     "roast": 5, "salmon": 6, "steak": 7, "venison": 8, "wild_salmon": 9,
+    "bread": 10,  # appended
 }
 _CUT_ENC: dict[str, int] = {
     "belly": 0, "breast": 1, "brisket": 2, "burger": 3, "butt": 4,
@@ -48,10 +50,12 @@ _CUT_ENC: dict[str, int] = {
     "rib_eye": 15, "rib_pork": 16, "rib_rack": 17, "roast": 18, "rump": 19,
     "shoulder": 20, "sirloin": 21, "steak": 22, "t_bone": 23,
     "tenderloin": 24, "thigh": 25, "tomahawk": 26, "topside": 27, "whole": 28,
+    "bread": 29,  # appended: one shared code for all bread cuts (see _CUT_LOOKUP)
 }
 _DONENESS_ENC: dict[str, int] = {
     "rare": 6, "medium_rare": 3, "medium": 2, "medium_well": 4,
     "well_done": 7, "fall_apart": 0, "pulled": 5,
+    "baked": 8,   # appended: bread
 }
 
 # ---------------------------------------------------------------------------
@@ -95,6 +99,14 @@ _CUT_LOOKUP: dict[str, tuple[int, int, int, int]] = {
     # rump/steak cut codes, the same reuse pattern as duck_breast above.
     "rump_lamb":  (2, 4, 7, _CUT_ENC["rump"]),
     "fillet":     (1, 7, 6, _CUT_ENC["fillet"]),
+    # Bread: every bread cut shares one cut code.  Only brioche and sourdough have
+    # cooks so far (4 + 1 at the 2026-10 retrain), so a per-cut code would hand the
+    # trees three never-seen ordinal values to split on; split by cut once there is data.
+    "yeasted":    (6, 5, 10, _CUT_ENC["bread"]),
+    "sourdough":  (6, 5, 10, _CUT_ENC["bread"]),
+    "enriched":   (6, 5, 10, _CUT_ENC["bread"]),
+    "rye":        (6, 5, 10, _CUT_ENC["bread"]),
+    "inclusions": (6, 5, 10, _CUT_ENC["bread"]),
     "other":      (3, 5, 4, _CUT_ENC["other"]),
 }
 
@@ -177,10 +189,9 @@ _COOK_NAME_MAP: dict[str, tuple[int, int, int, int, int]] = {
     "Lamb Rack / Ribs Medium":          _encode("rib_rack",    "medium"),
     # Lamb — Shoulder
     "Lamb Shoulder Fall Apart":         _encode("shoulder",    "fall_apart"),
-    # Bread — no bread in the training data: the cuts are not in _CUT_LOOKUP and
-    # "baked" is not in _DONENESS_ENC, so _encode gives the generic "other" cook
-    # (the encoding bread was baked with before it had presets).  retrain.py
-    # resolves names through resolve_meat, so training sees the same encoding.
+    # Bread — real codes (category 6, cut_type 10, doneness 'baked' 8, one shared bread
+    # cut code) since the 2026-10 retrain; retrain.py resolves names through resolve_meat,
+    # so training sees the same encoding.
     "Bread Yeasted Baked":              _encode("yeasted",     "baked"),
     "Bread Sourdough Baked":            _encode("sourdough",   "baked"),
     "Bread Enriched (Brioche / Cozonac) Baked": _encode("enriched", "baked"),

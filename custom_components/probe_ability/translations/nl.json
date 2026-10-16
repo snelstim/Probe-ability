@@ -87,7 +87,6 @@
         "no_probe_sensors": "Geen probe-sensoren beschikbaar",
         "no_probe_sensors_hint": "Controleer of je thermometerprobes zijn aangesloten en zichtbaar zijn in Home Assistant.",
         "warming_up_target": "Opwarmen… doel",
-        "collecting_data": "Gegevens verzamelen ({count}/{needed})",
         "readings": "Metingen: {count}/{needed}",
         "building_span": "Gegevensbereik opbouwen…",
         "ready_at": "klaar om {time}",

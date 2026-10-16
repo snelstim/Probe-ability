@@ -87,7 +87,6 @@
         "no_probe_sensors": "Nicio sondă disponibilă",
         "no_probe_sensors_hint": "Verifică dacă sondele termometrului sunt conectate și vizibile în Home Assistant.",
         "warming_up_target": "Se încălzește… țintă",
-        "collecting_data": "Se colectează date ({count}/{needed})",
         "readings": "Citiri: {count}/{needed}",
         "building_span": "Se culeg date…",
         "ready_at": "gata la {time}",

@@ -57,6 +57,15 @@ MIN_CARRYOVER_C = 1.0
 MAX_CARRYOVER_C = 8.0
 
 
+def has_carryover(cook_name: str | None) -> bool:
+    """False for bread: a loaf is baked to a core temperature and does not coast
+    up to it, so the target itself is the removal point — no early-pull advice
+    and no rest tracking.  (A sourdough heating at 7 °C/min would otherwise be
+    told to leave the oven 8 °C short.)"""
+    name = (cook_name or "").strip()
+    return not (name == "Bread" or name.startswith("Bread "))
+
+
 def pull_temp(target_temp: float, rate_per_minute: float | None) -> float | None:
     """Temperature at which meat should leave the heat so carryover lands on target.
 
@@ -438,7 +447,7 @@ class CookPredictor:
         now_ts, current_temp, _ = self.readings[-1]
 
         # Removed from heat?  Follow the rest and finish the cook at its peak.
-        rest = self._track_rest()
+        rest = self._track_rest() if has_carryover(self.cook_name) else None
         if rest is not None:
             return rest
 

@@ -14,7 +14,7 @@ import os
 sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "custom_components", "probe_ability"))
 
-from predictor import CookPredictor, pull_temp, reading_plausible
+from predictor import CookPredictor, has_carryover, pull_temp, reading_plausible
 
 
 def simulate_cook(
@@ -179,6 +179,22 @@ def check_rest_and_pull() -> None:
     ok(CookPredictor.from_dict(old).target_history == [[0.0, 74.0]], "old save without history is seeded from its target")
     p.reset()
     ok(p.target_history == [], "reset clears the history")
+
+    # G: bread has no carryover — the target is the removal point (a sourdough heating at
+    # 7 C/min was told to pull at 85 C for a 93 C target), and an ambient collapse near the
+    # target is the oven door, not a rest
+    ok(not has_carryover("Bread Sourdough Baked") and not has_carryover("Bread")
+       and not has_carryover("Bread Rye") and not has_carryover(" Bread Yeasted Baked "),
+       "bread presets and the bare category have no carryover")
+    ok(has_carryover("Beef Sirloin Rare") and has_carryover("Custom") and has_carryover("")
+       and has_carryover(None) and has_carryover("Breadfruit Roast"), "everything else keeps carryover")
+    for name, expect_rest in (("Bread Sourdough Baked", False), ("Beef Sirloin Rare", True)):
+        p = CookPredictor(target_temp=93.0); p.cook_name = name; p.add_reading(0.0, 20.0, 240.0)
+        t = heat(p, 0.0, 20.0, 86.0, 240.0, 60)
+        for temp in (86.4, 86.9, 87.3, 87.6, 87.8, 87.9, 88.0, 88.0, 87.9, 87.8, 87.7, 87.6, 87.5, 87.4):
+            t += 30.0; p.add_reading(t, temp, 130.0); r = p.predict()     # oven off / door open, probe still in
+        ok((p.rest_peak_c is not None) == expect_rest and (r.message.startswith("Rested") == expect_rest),
+           f"{name}: rest tracking {'on' if expect_rest else 'off'}, got rest_peak={p.rest_peak_c} {r.message}")
 
     print(f"All {checks} checks passed.")
 

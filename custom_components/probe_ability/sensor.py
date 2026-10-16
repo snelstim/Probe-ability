@@ -17,6 +17,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN, PROBE_MODE_COMBINED, display_unit
+from .predictor import has_carryover as _has_carryover
 from .predictor import pull_temp as _pull_temp
 
 _LOGGER = logging.getLogger(__name__)
@@ -278,7 +279,8 @@ class CookTimeRemainingSensor(CookPredictorSensorBase):
                 attrs["ambient_temp"] = round(predictor.current_ambient, 1)
 
             # Pull-from-heat temperature
-            pull = _pull_temp(predictor.target_temp, result.rate_per_minute)
+            pull = (_pull_temp(predictor.target_temp, result.rate_per_minute)
+                    if _has_carryover(predictor.cook_name) else None)
             if pull is not None:
                 attrs["pull_temp"] = pull
             if predictor.rest_peak_c is not None:
@@ -317,7 +319,8 @@ class CookTimeRemainingSensor(CookPredictorSensorBase):
                         attrs[f"probe_{n}_time_remaining"] = round(
                             extra_result.time_remaining_seconds / 60, 1
                         )
-                    extra_pull = _pull_temp(extra_pred.target_temp, extra_result.rate_per_minute)
+                    extra_pull = (_pull_temp(extra_pred.target_temp, extra_result.rate_per_minute)
+                                  if _has_carryover(extra_pred.cook_name) else None)
                     if extra_pull is not None:
                         attrs[f"probe_{n}_pull_temp"] = extra_pull
                     if extra_pred.rest_peak_c is not None:

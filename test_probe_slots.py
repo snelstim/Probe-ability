@@ -412,6 +412,20 @@ def test_sensor_platform() -> None:
           and sensor.probe_index_of(ENTRY_ID, "ffffffff_eta_3") is None
           and sensor.probe_index_of(ENTRY_ID, f"{ENTRY_ID}_eta_x") is None)
 
+    # Pull-from-heat advice: meat gets it, bread does not (a loaf is baked to its target,
+    # it does not coast — the card would have said "pull at 85" for a 93 sourdough).
+    pred3 = m.predictors[3]
+    pred3.add_reading(0.0, 20.0, 230.0)
+    for i in range(1, 41):                                  # 20 -> 50 C in 20 min (target is 60), hot oven
+        pred3.add_reading(i * 30.0, 20.0 + 30.0 * i / 40, 230.0)
+    pred3.cook_name = "Beef Sirloin Rare"
+    check("steak on probe 4 publishes a pull temperature (own entity and primary's probe_4_*)",
+          "pull_temp" in tr3.extra_state_attributes and "probe_4_pull_temp" in tr0.extra_state_attributes)
+    pred3.cook_name = "Bread Sourdough Baked"
+    check("bread on probe 4 publishes no pull temperature on either entity",
+          "pull_temp" not in tr3.extra_state_attributes
+          and "probe_4_pull_temp" not in tr0.extra_state_attributes)
+
     # A contiguous setup: nothing to clean up, the same entities as before.
     hass, entry, m = _monitor(CONTIGUOUS, _states())
     hass.registry = FakeRegistry([

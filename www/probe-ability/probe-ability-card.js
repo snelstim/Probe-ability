@@ -330,6 +330,55 @@ function _toDisp(c, unit) { return unit === "F" ? _cToF(c) : c; }
 function _fromDisp(v, unit) { return unit === "F" ? _fToC(v) : v; }
 function _unitLabel(unit) { return unit === "F" ? "°F" : "°C"; }
 
+// Graph smoothing.  Probe readings are noisy and quantised, so the history line
+// is lightly averaged (a 5-point triangular kernel; the newest reading is kept
+// exactly so the line ends on the true current value) and drawn as a monotone
+// cubic spline (Fritsch–Carlson), which cannot overshoot the data.
+function _smoothSeries(ys) {
+  if (ys.length < 8) return ys.slice();
+  const k = [1, 2, 3, 2, 1];
+  return ys.map((y, i) => {
+    if (i === ys.length - 1) return y;
+    let sum = 0, wsum = 0;
+    for (let d = -2; d <= 2; d++) {
+      const j = i + d;
+      if (j < 0 || j >= ys.length) continue;
+      sum += ys[j] * k[d + 2];
+      wsum += k[d + 2];
+    }
+    return sum / wsum;
+  });
+}
+
+function _smoothPath(pts) {
+  const n = pts.length;
+  const p = (x, y) => `${x.toFixed(1)} ${y.toFixed(1)}`;
+  if (n < 3) return pts.map(([x, y], i) => `${i ? "L" : "M"}${p(x, y)}`).join(" ");
+  const dx = [], m = [];
+  for (let i = 0; i < n - 1; i++) {
+    dx[i] = pts[i + 1][0] - pts[i][0];
+    m[i] = dx[i] === 0 ? 0 : (pts[i + 1][1] - pts[i][1]) / dx[i];
+  }
+  const tan = [m[0]];
+  for (let i = 1; i < n - 1; i++) tan[i] = m[i - 1] * m[i] <= 0 ? 0 : (m[i - 1] + m[i]) / 2;
+  tan[n - 1] = m[n - 2];
+  for (let i = 0; i < n - 1; i++) {
+    if (m[i] === 0) { tan[i] = 0; tan[i + 1] = 0; continue; }
+    const a = tan[i] / m[i], b = tan[i + 1] / m[i], s2 = a * a + b * b;
+    if (s2 > 9) {
+      const c = 3 / Math.sqrt(s2);
+      tan[i] = c * a * m[i];
+      tan[i + 1] = c * b * m[i];
+    }
+  }
+  let d = `M${p(pts[0][0], pts[0][1])}`;
+  for (let i = 0; i < n - 1; i++) {
+    const h = dx[i] / 3;
+    d += `C${p(pts[i][0] + h, pts[i][1] + tan[i] * h)} ${p(pts[i + 1][0] - h, pts[i + 1][1] - tan[i + 1] * h)} ${p(pts[i + 1][0], pts[i + 1][1])}`;
+  }
+  return d;
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatTime(minutes) {
@@ -796,7 +845,11 @@ class CookPredictorCard extends HTMLElement {
   }
 
   // Every view hands its markup to _setHtml through this setter.
-  set _html(html) { this._setHtml(html); }
+  set _html(html) {
+    this._setHtml(html);
+    // Graphs measure themselves once the markup is in the page (see _fitGraphs).
+    if (html.includes("data-gkey")) this._scheduleFit(0);
+  }
 
   // Update the card's DOM in place to match the new markup.
   //
@@ -1279,6 +1332,51 @@ class CookPredictorCard extends HTMLElement {
     return g.data;
   }
 
+  // The graphs are drawn at the width they really have.  After a render, measure
+  // each one; when the width differs from the one it was drawn for, remember it
+  // and render again.  A ResizeObserver on the card repeats this when the card
+  // is resized.  Guarded against oscillation (a scrollbar appearing as the
+  // height changes can shift the width back and forth): at most 4 refits per 2 s.
+  _fitGraphs() {
+    this._fitTimer = null;
+    const root = this.firstElementChild;
+    if (!root) return;
+    const graphs = root.querySelectorAll("svg[data-gkey]");
+    if (graphs.length && typeof ResizeObserver !== "undefined" && this._roEl !== root) {
+      this._ro?.disconnect();
+      this._ro = new ResizeObserver(() => this._scheduleFit(150));
+      this._ro.observe(root);
+      this._roEl = root;
+    }
+    const widths = this._graphW || (this._graphW = {});
+    let changed = false;
+    for (const svg of graphs) {
+      const w = Math.round(svg.getBoundingClientRect().width);
+      if (w >= 120 && Math.abs(w - (widths[svg.dataset.gkey] || 0)) > 3) {
+        widths[svg.dataset.gkey] = w;
+        changed = true;
+      }
+    }
+    if (!changed) return;
+    const now = Date.now();
+    this._fitStamps = (this._fitStamps || []).filter((ts) => now - ts < 2000);
+    if (this._fitStamps.length >= 4) return;
+    this._fitStamps.push(now);
+    if (!this._confirmPending && !this._formControlFocused()) this._render();
+  }
+
+  _scheduleFit(ms) {
+    if (this._fitTimer) clearTimeout(this._fitTimer);
+    this._fitTimer = setTimeout(() => this._fitGraphs(), ms);
+  }
+
+  disconnectedCallback() {
+    this._ro?.disconnect();
+    this._ro = this._roEl = null;
+    if (this._fitTimer) clearTimeout(this._fitTimer);
+    this._fitTimer = null;
+  }
+
   // Graph for probe i.  o = { toggleId, color, pullC, timeRemaining, compact, showEta,
   //                           combined, caption }
   // pullC is °C, or a function of the probe slot the data turned out to be for
@@ -1288,8 +1386,12 @@ class CookPredictorCard extends HTMLElement {
     const unit = this._tempUnit || "C";
     const ul = _unitLabel(unit);
     const compact = !!o.compact;
-    const W = compact ? 230 : 320;
-    const H = compact ? 140 : 170;
+    // Drawn at the width the chart really has (measured after a render, see
+    // _fitGraphs), so 1 unit = 1 CSS px and text / strokes keep their size on a
+    // wide tile instead of being scaled up with the picture.
+    const gkey = o.combined ? "combined" : i;
+    const W = this._graphW?.[gkey] || (compact ? 230 : 320);
+    const H = Math.max(110, Math.min(190, Math.round(W * 0.5)));
     const toggle = this._viewToggle(o.toggleId);
     const rd = g && Array.isArray(g.readings) ? g.readings : [];
     const row = (inner) => `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:24px;">${inner}${toggle}</div>`;
@@ -1297,7 +1399,7 @@ class CookPredictorCard extends HTMLElement {
     if (rd.length < 2) {
       return `${row("<span></span>")}
         <div style="aspect-ratio:${W}/${H};display:flex;align-items:center;justify-content:center;
-                    font-size:0.8em;color:var(--secondary-text-color);">${this._graphData?.[o.combined ? "combined" : i]?.failed ? t("graph_unavailable") : t("graph_loading")}</div>`;
+                    font-size:0.8em;color:var(--secondary-text-color);">${this._graphData?.[gkey]?.failed ? t("graph_unavailable") : t("graph_loading")}</div>`;
     }
 
     const pullC = typeof o.pullC === "function" ? o.pullC(g.probe ?? i) : o.pullC;
@@ -1311,7 +1413,7 @@ class CookPredictorCard extends HTMLElement {
     const tNow = rd[rd.length - 1][0];
     const tEnd = Math.max(fc ? fc.band[fc.band.length - 1][0] : 0, tNow + Math.max(300, (tNow - t0) * 0.08));
     const span = Math.max(tEnd - t0, 1);
-    const L = 30, R = 8, T = 8, B = 20;
+    const L = 30, R = 24, T = 10, B = 20;   // R leaves room to centre the ETA label under its marker
     const pw = W - L - R, ph = H - T - B;
     const X = (ts) => L + ((ts - t0) / span) * pw;
 
@@ -1326,10 +1428,10 @@ class CookPredictorCard extends HTMLElement {
     if (hi - lo < step) hi = lo + step;
     const Y = (v) => T + (1 - (v - lo) / (hi - lo)) * ph;
 
-    const label = "font-size:9px;fill:var(--secondary-text-color);";
+    const label = "font-size:10px;fill:var(--secondary-text-color);";
     let grid = "";
     for (let v = lo; v <= hi + 1e-9; v += step) {
-      grid += `<line x1="${L}" y1="${num(Y(v))}" x2="${W - R}" y2="${num(Y(v))}" stroke="var(--divider-color)" stroke-width="0.5"/>
+      grid += `<line x1="${L}" y1="${num(Y(v))}" x2="${W - R}" y2="${num(Y(v))}" stroke="var(--divider-color)" stroke-width="1" stroke-opacity="0.6"/>
         <text x="${L - 4}" y="${num(Y(v))}" text-anchor="end" dominant-baseline="middle" style="${label}">${Math.round(v)}</text>`;
     }
 
@@ -1346,12 +1448,13 @@ class CookPredictorCard extends HTMLElement {
     const lblX = X(t0 + tgt[tgt.length - 1][0]) + 3;
 
     const showAmb = rd.some((r) => f(r[2]) <= hi);
+    const tempSm = _smoothSeries(rd.map((r) => f(r[1])));
+    const ambSm = _smoothSeries(rd.map((r) => f(r[2])));
     const cid = `pa-clip-${this._gid || (this._gid = ++_graphSeq)}-${o.toggleId}`;
     const pullY = pullC != null && pullC < g.target_temp ? Y(f(pullC)) : null;
 
     let forecast = "";
-    let xLabels = "";
-    const startX = X(t0);
+    let etaX = null, etaText = "";
     if (fc) {
       const up = fc.band.map((b) => [X(b[0]), Y(f(b[2]))]);
       const dn = fc.band.map((b) => [X(b[0]), Y(f(b[1]))]).reverse();
@@ -1361,26 +1464,39 @@ class CookPredictorCard extends HTMLElement {
       const exEarly = X(fc.early_ts), exLate = X(fc.late_ts);
       const earlyEdge = fc.band.filter((b) => b[0] < fc.early_ts).map((b) => [X(b[0]), Y(f(b[2]))]);
       earlyEdge.push([exEarly, yTgt]);
-      const edge = (d) => `<path d="${d}" fill="none" stroke="${o.color}" stroke-opacity="0.6" stroke-width="1" stroke-dasharray="2 3"/>`;
+      const edge = (d) => `<path d="${d}" fill="none" stroke="${o.color}" stroke-opacity="0.6" stroke-width="1" stroke-dasharray="1 3" stroke-linecap="round"/>`;
       // The finish window itself: a bar on the target line from the earliest to the latest time.
       const window_ = `<line x1="${num(exEarly)}" y1="${num(yTgt)}" x2="${num(exLate)}" y2="${num(yTgt)}"
-            stroke="${o.color}" stroke-opacity="0.5" stroke-width="6" stroke-linecap="round"/>`;
+            stroke="${o.color}" stroke-opacity="0.5" stroke-width="4" stroke-linecap="round"/>`;
       forecast = `
         <path d="${line(up)} ${line(dn).replace(/^M/, "L")} Z" fill="${o.color}" fill-opacity="0.2" stroke="none"/>
         ${edge(line(earlyEdge))}${edge(line(dn))}
         ${window_}
         <path d="${line(fc.curve.map((p) => [X(p[0]), Y(f(p[1]))]))}" fill="none" stroke="${o.color}"
-              stroke-width="2" stroke-dasharray="5 4" stroke-linecap="round"/>
-        <circle cx="${num(ex)}" cy="${num(yTgt)}" r="3.5" fill="var(--card-background-color, #fff)" stroke="${o.color}" stroke-width="2"/>`;
-      const endAnchor = ex > W - 30 ? "end" : "middle";
-      xLabels += `<text x="${num(Math.min(ex, W - R))}" y="${H - 5}" text-anchor="${endAnchor}" style="${label}font-weight:600;">${clock(fc.eta_ts)}</text>`;
-      if (ex - startX > 70) xLabels += `<text x="${L}" y="${H - 5}" text-anchor="start" style="${label}">${clock(t0)}</text>`;
-    } else {
-      xLabels += `<text x="${L}" y="${H - 5}" text-anchor="start" style="${label}">${clock(t0)}</text>`;
+              stroke-width="1.5" stroke-dasharray="4 3" stroke-linecap="round"/>
+        <circle cx="${num(ex)}" cy="${num(yTgt)}" r="3" fill="var(--card-background-color, #fff)" stroke="${o.color}" stroke-width="1.5"/>`;
+      etaX = ex;
+      etaText = clock(fc.eta_ts);
     }
 
     const cur = rd[rd.length - 1][1];
     const nowX = X(tNow), nowY = Y(f(cur));
+    const curText = `${f(cur).toFixed(1)}°`;
+
+    // Time labels under the axis, each centred on its marker; one is dropped
+    // when it would run into a neighbour (≈5.6 px per character at 10 px).
+    const half = (txt) => txt.length * 2.8 + 3;
+    const axis = [{ x: X(t0), txt: clock(t0), anchor: "start", bold: false }];
+    if (etaX != null) axis.push({ x: etaX, txt: etaText, anchor: "middle", bold: true });
+    const nowTxt = clock(tNow);
+    if (axis.every((a) => Math.abs(a.x - nowX) > half(a.txt) + half(nowTxt) + (a.anchor === "start" ? half(a.txt) : 0))) {
+      axis.push({ x: nowX, txt: nowTxt, anchor: "middle", bold: false });
+    }
+    const xLabels = axis.map((a) => {
+      const hw = half(a.txt);
+      const x = a.anchor === "start" ? a.x : Math.max(L + hw, Math.min(W - hw, a.x));
+      return `<text x="${num(x)}" y="${H - 5}" text-anchor="${a.anchor}" style="${label}${a.bold ? "font-weight:600;" : ""}">${a.txt}</text>`;
+    }).join("");
     const eta = fc ? clock(fc.eta_ts) : "";
     const aria = fc
       ? t("graph_aria_eta", { temp: `${Math.round(f(cur))}${ul}`, target: `${Math.round(f(g.target_temp))}${ul}`, eta })
@@ -1391,6 +1507,14 @@ class CookPredictorCard extends HTMLElement {
     const ambLabel = showAmb && ambNow >= lo && ambNow <= hi
       ? `<text x="${num(nowX - 6)}" y="${num(Y(ambNow) - 3)}" text-anchor="end" style="${label}opacity:0.8;">${t("graph_ambient")}</text>`
       : "";
+    // Dotted guides from the newest reading to both axes, and its value.
+    const guide = `<path d="M${L} ${num(nowY)} H${num(nowX)} V${T + ph}" fill="none" stroke="var(--secondary-text-color)"
+          stroke-opacity="0.7" stroke-width="1" stroke-dasharray="1 3" stroke-linecap="round"/>`;
+    // Above-left of the dot (the line arrives from below-left, the forecast leaves
+    // to the upper right); below-right instead when the dot is too close to the axis.
+    const leftRoom = nowX - 7 - curText.length * 6.2 >= L;
+    const curLabel = `<text x="${num(leftRoom ? nowX - 7 : nowX + 7)}" y="${num(leftRoom ? Math.max(nowY - 7, T + 8) : Math.min(nowY + 15, T + ph - 3))}"
+          text-anchor="${leftRoom ? "end" : "start"}" style="font-size:11px;font-weight:700;fill:${o.color};">${curText}</text>`;
 
     const doneAt = o.showEta === false ? "" : (eta || etaFromMinutes(o.timeRemaining));
     const range = fc
@@ -1409,20 +1533,22 @@ class CookPredictorCard extends HTMLElement {
 
     return `
       ${row(caption)}
-      <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${aria}" style="display:block;width:100%;height:auto;">
+      <svg viewBox="0 0 ${W} ${H}" data-gkey="${gkey}" role="img" aria-label="${aria}" style="display:block;width:100%;height:auto;">
         <defs><clipPath id="${cid}"><rect x="${L}" y="${T}" width="${pw}" height="${ph}"/></clipPath></defs>
         ${grid}
-        ${showAmb ? `<path d="${line(rd.map((r) => [X(r[0]), Y(f(r[2]))]))}" fill="none"
+        ${showAmb ? `<path d="${_smoothPath(rd.map((r, k) => [X(r[0]), Y(ambSm[k])]))}" fill="none"
                            stroke="var(--secondary-text-color)" stroke-opacity="0.4" stroke-width="1" clip-path="url(#${cid})"/>` : ""}
-        <path d="${tp}" fill="none" stroke="var(--success-color)" stroke-width="1.2" stroke-dasharray="4 3"/>
+        ${guide}
+        <path d="${tp}" fill="none" stroke="var(--success-color)" stroke-width="1" stroke-dasharray="4 3"/>
         <text x="${num(lblX)}" y="${num(yTgt - 3)}" text-anchor="start" style="${label}fill:var(--success-color);">${t("graph_target")} ${Math.round(f(g.target_temp))}°</text>
         ${pullY != null ? `
-          <line x1="${L}" y1="${num(pullY)}" x2="${W - R}" y2="${num(pullY)}" stroke="var(--warning-color)" stroke-width="1" stroke-dasharray="2 3"/>
-          <text x="${num(lblX)}" y="${num(pullY + 9)}" text-anchor="start" style="${label}fill:var(--warning-color);">${t("graph_pull")} ${Math.round(f(pullC))}°</text>` : ""}
+          <line x1="${L}" y1="${num(pullY)}" x2="${W - R}" y2="${num(pullY)}" stroke="var(--warning-color)" stroke-width="1" stroke-dasharray="1 3" stroke-linecap="round"/>
+          <text x="${num(lblX)}" y="${num(pullY + 11)}" text-anchor="start" style="${label}fill:var(--warning-color);">${t("graph_pull")} ${Math.round(f(pullC))}°</text>` : ""}
         ${forecast}
-        <path d="${line(rd.map((r) => [X(r[0]), Y(f(r[1]))]))}" fill="none" stroke="${o.color}"
-              stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
-        <circle cx="${num(nowX)}" cy="${num(nowY)}" r="3.5" fill="${o.color}"/>
+        <path d="${_smoothPath(rd.map((r, k) => [X(r[0]), Y(tempSm[k])]))}" fill="none" stroke="${o.color}"
+              stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+        <circle cx="${num(nowX)}" cy="${num(nowY)}" r="3" fill="${o.color}"/>
+        ${curLabel}
         ${ambLabel}
         ${xLabels}
       </svg>

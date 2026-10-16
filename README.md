@@ -248,7 +248,7 @@ entity: sensor.probe_ability_time_remaining
 view: graph
 ```
 
-- **Solid line** — the probe's temperature since the cook started; the dot is now. A faint line shows the ambient (oven / smoker) temperature while it is within the chart's range.
+- **Solid line** — the probe's temperature since the cook started, lightly smoothed; the dot is now, with its current value beside it and dotted guides down to the temperature and time axes. A faint line shows the ambient (oven / smoker) temperature while it is within the chart's range.
 - **Dashed curve** — the forecast, from now to the predicted finish, with the **ETA** marked on the time axis. The shaded band shows the **earliest and latest forecast**: its two dotted edges are the forecast curves for the earliest and the latest finish time the card has predicted over the last 10 minutes, the thick bar on the target line marks that finish window, and the exact times are written under the chart (*Earliest 10:37 PM · latest 10:56 PM*). A steady cook has a narrow window and a noisy one a wide window; the window is never narrower than ±1 minute or wider than ±50 % of the time remaining.
 - **Dashed lines** — the **target** (it steps if you change the target mid-cook) and, once a heating rate is known, the **pull** temperature.
 - The time remaining and "done at" time sit under the chart, as the ring's centre does.

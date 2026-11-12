@@ -33,6 +33,11 @@
  *                   the entity's own instance; only to override it)
  *   probe_layout: vertical | horizontal | grid              (optional)
  *   collapsible: true | false                               (optional)
+ *   hide_when_no_data: true | false                         (optional: when idle
+ *                   and no probe is reporting, show a slim line instead of the
+ *                   "No probe sensors available" warning)
+ *   graph_include_ambient: true | false                     (optional: fit the
+ *                   graph's temperature axis to the ambient line too)
  *   view: ring | graph                                      (optional: countdown
  *                   ring, or temperature history with a forecast)
  *   probe_sensors: [sensor.a, sensor.d]                     (optional: show only
@@ -439,6 +444,8 @@ class CookPredictorCard extends HTMLElement {
     // probe_sensors attribute) — see _slotSensors.
     this._probeSensors = (config.probe_sensors || []).map((id) => (typeof id === "string" && id ? id : null));
     this._ambientSensor = config.ambient_sensor || null;
+    this._hideNoData = config.hide_when_no_data === true;
+    this._graphAmbient = config.graph_include_ambient === true;
     // Per-probe target-temp helpers (index 0 = probe 1 / combined mode):
     // target_temp_entity, target_temp_entity_2 … target_temp_entity_4.
     this._targetTempEntities = Array.from({ length: MAX_PROBES }, (_, i) => config[_targetKey(i)] || null);
@@ -1077,17 +1084,21 @@ class CookPredictorCard extends HTMLElement {
     this._html = `
       <ha-card>
         <div style="padding:20px;">
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:${this._hideNoData ? 8 : 20}px;">
             ${LOGO_SVG}
             <span style="font-size:1.3em;font-weight:500;">Probe-ability</span>
           </div>
+          ${this._hideNoData ? `
+          <div style="text-align:center;padding:4px 0 8px;font-size:0.85em;color:var(--secondary-text-color);">
+            ${t("no_probe_sensors_short")}
+          </div>` : `
           <div style="text-align:center;padding:20px 0;color:var(--warning-color);">
             <ha-icon icon="mdi:alert-outline" style="--mdc-icon-size:40px;"></ha-icon>
             <div style="font-size:1em;font-weight:500;margin-top:10px;">${t("no_probe_sensors")}</div>
             <div style="font-size:0.85em;color:var(--secondary-text-color);margin-top:6px;">
               ${t("no_probe_sensors_hint")}
             </div>
-          </div>
+          </div>`}
         </div>
       </ha-card>`;
   }
@@ -1442,16 +1453,26 @@ class CookPredictorCard extends HTMLElement {
     const tgt = g.target_history && g.target_history.length ? g.target_history : [[0, g.target_temp]];
     const vals = rd.map((r) => f(r[1])).concat(tgt.map((h) => f(h[1])));
     if (pullC != null) vals.push(f(pullC));
+    // Optionally fit the axis to the ambient line as well (otherwise ambient
+    // is drawn only where it falls inside the probe / target range).
+    if (this._graphAmbient) for (const r of rd) vals.push(f(r[2]));
     let lo = Math.min(...vals), hi = Math.max(...vals);
     const step = [1, 2, 5, 10, 20, 25, 50, 100].find((s) => s >= Math.max(hi - lo, 10) / 4) || 100;
     lo = Math.floor(lo / step) * step;
     hi = Math.ceil(hi / step) * step;
+    // Nobody grilling cares about 0–20 °C: once the cook is above that (the
+    // newest reading, the target and the pull temperature all are), start the
+    // axis there and give the room to the top.  Colder readings, from before,
+    // leave through the bottom edge (the lines are clipped to the plot).
+    const floorLo = f(20);
+    const keyVals = tgt.map((h) => f(h[1])).concat(pullC != null ? [f(pullC)] : [], [f(rd[rd.length - 1][1])]);
+    if (lo < floorLo && Math.min(...keyVals) >= floorLo) lo = floorLo;   // not a multiple of step: gridlines start above it
     if (hi - lo < step) hi = lo + step;
     const Y = (v) => T + (1 - (v - lo) / (hi - lo)) * ph;
 
     const label = "font-size:10px;fill:var(--secondary-text-color);";
     let grid = "";
-    for (let v = lo; v <= hi + 1e-9; v += step) {
+    for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) {
       grid += `<line x1="${L}" y1="${num(Y(v))}" x2="${W - R}" y2="${num(Y(v))}" stroke="var(--divider-color)" stroke-width="1" stroke-opacity="0.6"/>
         <text x="${L - 4}" y="${num(Y(v))}" text-anchor="end" dominant-baseline="middle" style="${label}">${Math.round(v)}</text>`;
     }
@@ -1468,7 +1489,7 @@ class CookPredictorCard extends HTMLElement {
     // unless it changed mid-cook), clear of the ETA marker at the right.
     const lblX = X(t0 + tgt[tgt.length - 1][0]) + 3;
 
-    const showAmb = rd.some((r) => f(r[2]) <= hi);
+    const showAmb = this._graphAmbient || rd.some((r) => f(r[2]) <= hi);
     const tempSm = _smoothSeries(rd.map((r) => f(r[1])));
     const ambSm = _smoothSeries(rd.map((r) => f(r[2])));
     const cid = `pa-clip-${this._gid || (this._gid = ++_graphSeq)}-${o.toggleId}`;
@@ -1567,7 +1588,7 @@ class CookPredictorCard extends HTMLElement {
           <text x="${num(lblX)}" y="${num(pullY + 11)}" text-anchor="start" style="${label}fill:var(--warning-color);">${t("graph_pull")} ${Math.round(f(pullC))}°</text>` : ""}
         ${forecast}
         <path d="${_smoothPath(rd.map((r, k) => [X(r[0]), Y(tempSm[k])]))}" fill="none" stroke="${o.color}"
-              stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+              stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" clip-path="url(#${cid})"/>
         <circle cx="${num(nowX)}" cy="${num(nowY)}" r="3" fill="${o.color}"/>
         ${curLabel}
         ${ambLabel}
@@ -2703,7 +2724,13 @@ class CookPredictorCard extends HTMLElement {
 // probe). Expandable groups are purely visual — the form data stays flat, so
 // _toFormData / _fromFormData are unaffected. Section titles are resolved here
 // because ha-form reads a section's `title` directly (not via computeLabel).
-function _buildEditorSchema() {
+function _buildEditorSchema(configuredProbes) {
+  // The card's probe_sensors only ever means "show these probes of the
+  // instance" — a sensor the instance doesn't use is ignored — so offer just the
+  // instance's own probes once they are known; before that, any temperature sensor.
+  const probePicker = configuredProbes && configuredProbes.length
+    ? { entity: { domain: "sensor", include_entities: configuredProbes } }
+    : { entity: { domain: "sensor", device_class: "temperature" } };
   return [
     {
       type: "expandable", title: t("ed_sec_general"),
@@ -2721,6 +2748,8 @@ function _buildEditorSchema() {
             ],
         } } },
         { name: "collapsible",    tkey: "ed_collapsible", selector: { boolean: {} } },
+        { name: "hide_when_no_data",      tkey: "ed_hide_no_data",     selector: { boolean: {} } },
+        { name: "graph_include_ambient",  tkey: "ed_graph_ambient",    selector: { boolean: {} } },
         { name: "view",           tkey: "ed_view",    selector: { select: {
             mode: "dropdown",
             options: [
@@ -2738,7 +2767,7 @@ function _buildEditorSchema() {
         { name: _targetKey(i), tkey: i === 0 ? "ed_target_entity" : "ed_target_entity_n", tvars: { n: i + 1 },
           selector: { entity: { domain: "input_number" } } },
         { name: `probe_sensor_${i}`, tkey: "ed_probe_n", tvars: { n: i + 1 },
-          selector: { entity: { domain: "sensor", device_class: "temperature" } } },
+          selector: probePicker },
       ],
     })),
   ];
@@ -2755,15 +2784,23 @@ class CookPredictorCardEditor extends HTMLElement {
     this._updateForm();
   }
 
+  // The ambient sensor the integration instance of the card's entity uses.
+  _ambientSuggestion() {
+    return this._hass?.states[this._config?.entity]?.attributes?.ambient_sensor || "";
+  }
+
   // Flatten probe_sensors array → individual schema keys
   _toFormData(cfg) {
     const ps = cfg.probe_sensors || [];
     const data = {
       entity:         cfg.entity         || "",
-      ambient_sensor: cfg.ambient_sensor || "",
+      // Never set -> suggest the instance's own ambient sensor; "" = on purpose none.
+      ambient_sensor: cfg.ambient_sensor === undefined ? this._ambientSuggestion() : (cfg.ambient_sensor || ""),
       entry_id:       cfg.entry_id       || "",
       probe_layout:   cfg.probe_layout   || "",
       collapsible:    cfg.collapsible !== false,
+      hide_when_no_data:     cfg.hide_when_no_data === true,
+      graph_include_ambient: cfg.graph_include_ambient === true,
       view:           cfg.view === "graph" ? "graph" : "ring",
     };
     for (let i = 0; i < MAX_PROBES; i++) {
@@ -2782,12 +2819,20 @@ class CookPredictorCardEditor extends HTMLElement {
       else delete cfg[key];
     };
     setOrDelete("entity", data.entity);
-    setOrDelete("ambient_sensor", data.ambient_sensor);
+    // A cleared picker is kept as "" so the suggestion does not come straight back.
+    if (data.ambient_sensor) cfg.ambient_sensor = data.ambient_sensor;
+    else if (this._ambientSuggestion()) cfg.ambient_sensor = "";
+    else delete cfg.ambient_sensor;
     setOrDelete("entry_id", data.entry_id);
     setOrDelete("probe_layout", data.probe_layout);
     // Collapsible is on by default: only persist an explicit "off".
     if (data.collapsible === false) cfg.collapsible = false;
     else delete cfg.collapsible;
+    // Off by default: only persist an explicit "on".
+    for (const key of ["hide_when_no_data", "graph_include_ambient"]) {
+      if (data[key] === true) cfg[key] = true;
+      else delete cfg[key];
+    }
     // The ring is the default: only persist an explicit "graph".
     if (data.view === "graph") cfg.view = "graph";
     else delete cfg.view;
@@ -2834,7 +2879,8 @@ class CookPredictorCardEditor extends HTMLElement {
     }
 
     form.hass   = this._hass;
-    form.schema = _buildEditorSchema();
+    const probes = this._hass.states[this._config.entity]?.attributes?.probe_sensors;
+    form.schema = _buildEditorSchema(Array.isArray(probes) ? probes.filter(Boolean) : null);
     form.data   = this._toFormData(this._config);
   }
 }

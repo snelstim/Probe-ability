@@ -109,13 +109,15 @@ entity: sensor.probe_ability_time_remaining
 | `entity` | **Yes** | The primary `time_remaining` sensor entity ID |
 | `entry_id` | No | Not needed any more: the card reads the instance from its `entity` (the sensor reports its own `entry_id`). Only set it to override that. See [Multiple instances](#multiple-instances) |
 | `probe_sensors` | No | Show only these probes: the sensor entity IDs (as configured in the integration) of the probes this card is for, e.g. for one card per probe. Omit to show every probe of the instance. See [Probe availability](#probe-availability). |
-| `ambient_sensor` | No | Ambient (oven/smoker) sensor entity ID. If set, the card blocks starting a cook until this sensor is available and returning a valid reading. The ambient temperature displayed in the card comes from the backend sensor attributes regardless of this setting. |
+| `ambient_sensor` | No | Ambient (oven/smoker) sensor entity ID. If set, the card blocks starting a cook until this sensor is available and returning a valid reading. The ambient temperature displayed in the card comes from the backend sensor attributes regardless of this setting. The card editor suggests the instance's own ambient sensor here; pick another, or clear it, to change that. |
 | `target_temp_entity` | No | An `input_number` entity to link the card's target temperature to (probe 1 / combined mode). The card uses its value as the default target and writes changes back to it, so the card and a history-graph target line stay in sync — including **before** a cook starts. See [Linking the target temperature](#linking-the-target-temperature). |
 | `target_temp_entity_2` | No | Target-temp `input_number` for **probe 2** (individual mode). |
 | `target_temp_entity_3` | No | Target-temp `input_number` for **probe 3** (individual mode). |
 | `target_temp_entity_4` | No | Target-temp `input_number` for **probe 4** (individual mode). |
 | `probe_layout` | No | How individual-mode probe tiles are arranged: `vertical` (default), `horizontal` or `grid`. See [Probe tile layout](#probe-tile-layout). |
 | `collapsible` | No | `true` (default) gives every probe tile a summary header that folds the tile open or closed; `false` keeps all tiles open. See [Probe tile layout](#probe-tile-layout). |
+| `hide_when_no_data` | No | `false` (default). With `true`, an idle card with no probe reporting shows a slim "No probes reporting" line instead of the "No probe sensors available" warning. A running cook is always shown. |
+| `graph_include_ambient` | No | `false` (default). With `true` the graph's temperature axis is fitted to the ambient line too, so a hot oven or smoker is always visible; by default it is drawn only where it falls inside the probe / target range. |
 | `view` | No | `ring` (default) shows the countdown / temperature ring; `graph` shows the cook's temperature history with a forecast to the target instead. A button on the card switches between the two. See [Graph view](#graph-view). |
 
 #### How each option works in detail
@@ -248,7 +250,7 @@ entity: sensor.probe_ability_time_remaining
 view: graph
 ```
 
-- **Solid line** — the probe's temperature since the cook started, lightly smoothed; the dot is now, with its current value beside it and dotted guides down to the temperature and time axes. A faint line shows the ambient (oven / smoker) temperature while it is within the chart's range.
+- **Solid line** — the probe's temperature since the cook started, lightly smoothed; the dot is now, with its current value beside it and dotted guides down to the temperature and time axes. A faint line shows the ambient (oven / smoker) temperature while it is within the chart's range, or always with `graph_include_ambient: true`. The axis starts at 20 °C (68 °F) once the cook is above that, so the room goes to the temperatures that matter.
 - **Dashed curve** — the forecast, from now to the predicted finish, with the **ETA** marked on the time axis. The shaded band shows the **earliest and latest forecast**: its two dotted edges are the forecast curves for the earliest and the latest finish time the card has predicted over the last 10 minutes, the thick bar on the target line marks that finish window, and the exact times are written under the chart (*Earliest 10:37 PM · latest 10:56 PM*). A steady cook has a narrow window and a noisy one a wide window; the window is never narrower than ±1 minute or wider than ±50 % of the time remaining.
 - **Dashed lines** — the **target** (it steps if you change the target mid-cook) and, once a heating rate is known, the **pull** temperature.
 - The time remaining and "done at" time sit under the chart, as the ring's centre does.

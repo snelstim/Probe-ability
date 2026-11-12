@@ -391,6 +391,8 @@ def test_sensor_platform() -> None:
           attrs["probe_sensors"] == [P1, None, None, P4], str(attrs["probe_sensors"]))
     check("sensor reports its instance's entry_id (the card routes services by it)",
           attrs["entry_id"] == ENTRY_ID and tr3.extra_state_attributes["entry_id"] == ENTRY_ID)
+    check("sensor reports the instance's ambient sensor (the editor suggests it)",
+          attrs["ambient_sensor"] == AMBIENT, str(attrs.get("ambient_sensor")))
     check("probe_active / probe_names have one entry per slot",
           attrs["probe_active"] == [False] * 4 and attrs["probe_names"] == [None] * 4)
     check("idle: no per-probe data", "probe_4_active" not in attrs)

@@ -16,7 +16,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN, PROBE_MODE_COMBINED, display_unit
+from .const import CONF_AMBIENT_SENSOR, DOMAIN, PROBE_MODE_COMBINED, display_unit
 from .predictor import has_carryover as _has_carryover
 from .predictor import pull_temp as _pull_temp
 
@@ -229,6 +229,9 @@ class CookTimeRemainingSensor(CookPredictorSensorBase):
             # Which instance this sensor belongs to — the card passes it to the
             # start / stop services so it never needs entry_id in its config.
             "entry_id": self._entry.entry_id,
+            # The instance's ambient sensor — the card editor suggests it for the
+            # card's (optional) ambient readiness check.
+            "ambient_sensor": self._entry.data.get(CONF_AMBIENT_SENSOR),
         }
 
         if idx == 0:

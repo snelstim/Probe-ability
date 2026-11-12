@@ -29,7 +29,8 @@
  * Card config:
  *   type: custom:probe-ability-card
  *   entity: sensor.probe_ability_time_remaining
- *   entry_id: <your_entry_id>                               (optional)
+ *   entry_id: <your_entry_id>                               (optional: taken from
+ *                   the entity's own instance; only to override it)
  *   probe_layout: vertical | horizontal | grid              (optional)
  *   collapsible: true | false                               (optional)
  *   view: ring | graph                                      (optional: countdown
@@ -268,7 +269,10 @@ const _INTERACTIVE = "button, select, input, [data-toggle-probe], #cp-ring-conta
 // morph leaves them alone so a kept element stays wired exactly once.
 const _WIRING_ATTRS = new Set(["data-wired", "data-shown", "data-next", "data-confirm-label"]);
 // Same id and the same data-* attributes (other than the wiring ones): the
-// listeners of `a` mean the same thing for `b`.
+// listeners of `a` mean the same thing for `b`.  Buttons that do different
+// things at the same spot (a probe tile's Start, then its Stop) must differ in
+// a data-* attribute (data-action), or the old button — and its Start
+// listener — would be kept and Stop would never work.
 function _sameIdentity(a, b) {
   if (a.id !== b.id) return false;
   const data = (el) => Array.from(el.attributes)
@@ -2255,7 +2259,7 @@ class CookPredictorCard extends HTMLElement {
             </div>
           </div>`;
         actionBlock = `
-          <button class="cp-start-idle-probe" data-index="${i}"
+          <button class="cp-start-idle-probe" data-index="${i}" data-action="start"
             style="width:100%;padding:8px;margin-top:8px;background:var(--primary-color);
                    color:var(--text-primary-color);border:none;border-radius:6px;
                    font-size:0.85em;font-weight:500;cursor:pointer;">
@@ -2294,7 +2298,7 @@ class CookPredictorCard extends HTMLElement {
             </div>
           </div>`;
         actionBlock = `
-          <button class="cp-stop-probe" data-index="${i}"
+          <button class="cp-stop-probe" data-index="${i}" data-action="stop"
             style="width:100%;padding:8px;background:none;color:var(--error-color);
                    border:1px solid var(--error-color);border-radius:6px;
                    font-size:0.8em;cursor:pointer;margin-top:6px;">
@@ -2315,7 +2319,7 @@ class CookPredictorCard extends HTMLElement {
               : ""}
           </div>`;
         actionBlock = `
-          <button class="cp-stop-probe" data-index="${i}"
+          <button class="cp-stop-probe" data-index="${i}" data-action="stop"
             style="width:100%;padding:8px;background:var(--primary-color);
                    color:var(--text-primary-color);border:none;border-radius:6px;
                    font-size:0.8em;font-weight:500;cursor:pointer;margin-top:4px;">
@@ -2435,7 +2439,7 @@ class CookPredictorCard extends HTMLElement {
             </div>` : ""}`;
 
         actionBlock = `
-          <button class="cp-stop-probe" data-index="${i}"
+          <button class="cp-stop-probe" data-index="${i}" data-action="stop"
             style="width:100%;padding:8px;background:none;color:var(--error-color);
                    border:1px solid var(--error-color);border-radius:6px;
                    font-size:0.8em;cursor:pointer;margin-top:8px;">
@@ -2644,15 +2648,25 @@ class CookPredictorCard extends HTMLElement {
 
   // ── Service helpers ───────────────────────────────────────────────────
 
+  // The instance this card controls: the one its entity belongs to (the
+  // sensor says so), else the optional entry_id from the card config.  Without
+  // either the services fall back to the first instance.
+  _entryId() {
+    return this._hass?.states[this._config.entity]?.attributes?.entry_id
+      || this._config.entry_id || null;
+  }
+
   _callStart(serviceData) {
+    const entryId = this._entryId();
     this._hass.callService("probe_ability", "start_cook", {
       ...serviceData,
-      ...(this._config.entry_id ? { entry_id: this._config.entry_id } : {}),
+      ...(entryId ? { entry_id: entryId } : {}),
     });
   }
 
   _callStop(probeIndex) {
-    const data = this._config.entry_id ? { entry_id: this._config.entry_id } : {};
+    const entryId = this._entryId();
+    const data = entryId ? { entry_id: entryId } : {};
     if (probeIndex != null) data.probe_index = probeIndex;
     this._hass.callService("probe_ability", "stop_cook", data);
   }
@@ -2695,8 +2709,8 @@ function _buildEditorSchema() {
       type: "expandable", title: t("ed_sec_general"),
       icon: "mdi:cog", expanded: true,
       schema: [
-        { name: "entity",         tkey: "ed_entity",  selector: { entity: {} } },
-        { name: "ambient_sensor", tkey: "ed_ambient", selector: { entity: {} } },
+        { name: "entity",         tkey: "ed_entity",  selector: { entity: { integration: "probe_ability", domain: "sensor" } } },
+        { name: "ambient_sensor", tkey: "ed_ambient", selector: { entity: { domain: "sensor", device_class: "temperature" } } },
         { name: "entry_id",       tkey: "ed_entry",   selector: { text: {} } },
         { name: "probe_layout",   tkey: "ed_layout",  selector: { select: {
             mode: "dropdown",
@@ -2723,7 +2737,8 @@ function _buildEditorSchema() {
       schema: [
         { name: _targetKey(i), tkey: i === 0 ? "ed_target_entity" : "ed_target_entity_n", tvars: { n: i + 1 },
           selector: { entity: { domain: "input_number" } } },
-        { name: `probe_sensor_${i}`, tkey: "ed_probe_n", tvars: { n: i + 1 }, selector: { entity: {} } },
+        { name: `probe_sensor_${i}`, tkey: "ed_probe_n", tvars: { n: i + 1 },
+          selector: { entity: { domain: "sensor", device_class: "temperature" } } },
       ],
     })),
   ];

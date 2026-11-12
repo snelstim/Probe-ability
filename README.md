@@ -107,7 +107,7 @@ entity: sensor.probe_ability_time_remaining
 | Option | Required | Description |
 |---|---|---|
 | `entity` | **Yes** | The primary `time_remaining` sensor entity ID |
-| `entry_id` | No | Config entry ID, only needed when you have **multiple instances** of the integration installed. See [Multiple instances](#multiple-instances) |
+| `entry_id` | No | Not needed any more: the card reads the instance from its `entity` (the sensor reports its own `entry_id`). Only set it to override that. See [Multiple instances](#multiple-instances) |
 | `probe_sensors` | No | Show only these probes: the sensor entity IDs (as configured in the integration) of the probes this card is for, e.g. for one card per probe. Omit to show every probe of the instance. See [Probe availability](#probe-availability). |
 | `ambient_sensor` | No | Ambient (oven/smoker) sensor entity ID. If set, the card blocks starting a cook until this sensor is available and returning a valid reading. The ambient temperature displayed in the card comes from the backend sensor attributes regardless of this setting. |
 | `target_temp_entity` | No | An `input_number` entity to link the card's target temperature to (probe 1 / combined mode). The card uses its value as the default target and writes changes back to it, so the card and a history-graph target line stay in sync — including **before** a cook starts. See [Linking the target temperature](#linking-the-target-temperature). |
@@ -387,7 +387,7 @@ Every integration instance installed in HA gets a unique `entry_id` ; a string l
 
 ### When you need it
 
-You only need `entry_id` if you have **more than one instance** of Probe-ability installed (e.g. one for the smoker and one for the oven). With a single instance, `entry_id` can always be omitted, the integration finds the only available instance automatically.
+The **card** does not need it: it takes the instance from its `entity`. You need `entry_id` in **automations and service calls** if you have more than one instance of Probe-ability installed (e.g. one for the smoker and one for the oven). With a single instance, `entry_id` can always be omitted, the integration finds the only available instance automatically. Every Probe-ability sensor shows its `entry_id` in its attributes (Developer Tools → States).
 
 ### How to find your entry_id
 
@@ -428,7 +428,9 @@ Install Probe-ability multiple times (once per independent set of sensors). Each
 | Smoker | `sensor.smoker_probe`, `sensor.smoker_ambient` | `sensor.probe_ability_time_remaining` |
 | Oven | `sensor.oven_probe`, `sensor.oven_ambient` | `sensor.probe_ability_time_remaining_2` *(entity suffix set by HA)* |
 
-Use `entry_id` in each card and in any automations to target the right instance.
+Each card follows the instance of its `entity`, so just pick that instance's `time_remaining` sensor in the card editor (it lists only Probe-ability sensors). Use `entry_id` in automations and service calls to target the right instance.
+
+**Two probes that each have their own ambient sensor** (e.g. MeatMeet): add Probe-ability once per probe, each with that probe's sensor and its own ambient sensor. Each instance then has its own cook, target and ETA, and the combined view only follows probes within one instance.
 
 > **Note:** Entity IDs for the second instance will be suffixed by HA to avoid collisions (e.g. `sensor.probe_ability_time_remaining_2`). The exact suffix depends on your HA version.
 

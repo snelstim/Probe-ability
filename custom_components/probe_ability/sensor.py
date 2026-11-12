@@ -226,6 +226,9 @@ class CookTimeRemainingSensor(CookPredictorSensorBase):
             # the card check which probes exist and are reporting without a
             # duplicate probe_sensors list in the card config.
             "probe_sensors": list(self._monitor.probe_sensors),
+            # Which instance this sensor belongs to — the card passes it to the
+            # start / stop services so it never needs entry_id in its config.
+            "entry_id": self._entry.entry_id,
         }
 
         if idx == 0:

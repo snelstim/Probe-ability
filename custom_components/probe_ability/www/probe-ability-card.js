@@ -459,6 +459,7 @@ class CookPredictorCard extends HTMLElement {
     // Per-probe history cache for the graph view (see _fetchGraph).
     this._graphData = {};
     this._views = null;   // ring / graph per tile, read from storage on first use (see _viewFor)
+    this._helperSeen = {};   // linked target helper states already applied (see _followLinkedHelpers)
     // Per-slot form state: { category, cut, doneness, temp }
     // Key: "combined" or a probe index.
     // Backed by localStorage so selections survive page navigation.
@@ -503,9 +504,6 @@ class CookPredictorCard extends HTMLElement {
     // forms for the not-yet-started probes.
     if (this._formControlFocused()) return;
 
-    // Follow external changes to a linked target helper into stored idle temps.
-    this._applyLinkedTempChanges(prev, hass);
-
     const entity = this._config?.entity;
     const ns = hass.states[entity];
     const na = ns?.attributes || {};
@@ -539,7 +537,10 @@ class CookPredictorCard extends HTMLElement {
     // The prompt is an inline DOM replacement — a re-render would wipe it.
     if (!isIdle && this._confirmPending) return;
 
+    // Order matters: first keep what is in the form, then let a changed target
+    // helper override it — the other way round the old field value wins.
     this._saveIdleFormState();
+    this._followLinkedHelpers();
     this._render();
   }
 
@@ -575,30 +576,50 @@ class CookPredictorCard extends HTMLElement {
 
   // Returns { category, cut, doneness, temp } for a slot. A linked target
   // helper seeds the default temp for a fresh slot (_defaultTemp) and external
-  // changes to it are pushed into stored state via _applyLinkedTempChanges — but
+  // changes to it are pushed into stored state via _followLinkedHelpers — but
   // it does NOT override here, so a chosen preset/manual temp always shows.
   _slotState(key) {
     return this._idleState[key] || { category: null, cut: null, doneness: null, temp: this._defaultTemp(key) };
   }
 
-  // Reflect external changes to a linked target helper (dashboard/automation)
-  // into stored idle temps, so the card still follows the input_number without
-  // shadowing a locally chosen preset/manual value.
-  _applyLinkedTempChanges(prev, hass) {
-    if (!this._targetTempEntities || !prev) return;
+  // Reflect a linked target helper (moved from a dashboard or an automation)
+  // into the stored idle temps, so the card follows the input_number without
+  // shadowing a preset or typed value chosen since the helper last moved.
+  //
+  // The first time a helper is seen (a new card: page opened, dashboard
+  // switched) it wins over a stored temp, which may be stale: every choice made
+  // in the card is written to the helper.  A stored temp outside the helper's
+  // range could not be written, so that one is kept.
+  _followLinkedHelpers() {
+    const hass = this._hass;
+    const unit = hass.states[this._config.entity]?.attributes?.temp_unit
+      || this._tempUnit || localStorage.getItem("probe_ability_temp_unit") || "C";
+    const seen = {};
     let changed = false;
     for (const key of Object.keys(this._idleState)) {
       const entity = this._targetEntityFor(key);
-      if (!entity) continue;
-      const ns = hass.states[entity];
-      if (!ns) continue;
-      const ps = prev.states[entity];
-      if (ps && ps.state === ns.state) continue;   // unchanged externally
-      const v = parseFloat(ns.state);
+      const s = entity && hass.states[entity];
+      const v = s ? parseFloat(s.state) : NaN;
       if (isNaN(v)) continue;
-      this._idleState[key] = { ...this._idleState[key], temp: _fromDisp(v, this._tempUnit || "C") };
+      seen[entity] = s.state;
+      const before = this._helperSeen[entity];
+      if (before === s.state) continue;
+      const temp = this._idleState[key].temp;
+      if (before === undefined) {
+        const disp = _toDisp(temp, unit);
+        const { min, max } = s.attributes || {};
+        if (disp < parseFloat(min) || disp > parseFloat(max)) continue;
+        if (disp === v) continue;
+      }
+      this._idleState[key] = { ...this._idleState[key], temp: _fromDisp(v, unit) };
       changed = true;
     }
+    // Also remember helpers no slot has a stored temp for yet.
+    for (const entity of this._targetTempEntities || []) {
+      const s = entity && hass.states[entity];
+      if (s && !isNaN(parseFloat(s.state))) seen[entity] = s.state;
+    }
+    Object.assign(this._helperSeen, seen);
     if (changed) this._persistIdleState();
   }
 

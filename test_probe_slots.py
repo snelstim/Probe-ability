@@ -490,6 +490,47 @@ def test_display_unit() -> None:
           const.TEMP_UNIT_CELSIUS == "c" and const.TEMP_UNIT_FAHRENHEIT == "f")
 
 
+def test_combined_phase() -> None:
+    print("combined mode: done only when every active probe is done")
+    import time as _time
+
+    _, entry, m = _monitor(SPARSE, _states(p1=20.0, p4=21.0))
+    m.start_cook(target_temp=54.0, probe_mode=const.PROBE_MODE_COMBINED)
+    s0 = sensor.CookTimeRemainingSensor(m, entry, 0)
+    now = _time.time()
+
+    def feed(slot: int, temp: float) -> None:
+        for k in range(3):
+            m.predictors[slot].add_reading(now - 60 + k * 30, temp, 110.0)
+        m._last_reading_ts[slot] = now
+
+    feed(0, 55.0)   # probe 1 at target
+    feed(3, 30.0)   # probe 4 not
+    attrs = s0.extra_state_attributes
+    check("probe 1 done, probe 4 not: cook not done", attrs["phase"] != "done", attrs["phase"])
+    check("current_temp stays probe 1's", attrs["current_temp"] == 55.0)
+    m._last_reading_ts[3] = now - 600
+    check("a silent unfinished probe no longer holds the cook open",
+          s0.extra_state_attributes["phase"] == "done")
+    m._last_reading_ts[3] = now
+
+    m.start_cook(target_temp=54.0, probe_mode=const.PROBE_MODE_COMBINED)
+    feed(0, 30.0)   # probe 1 not at target
+    feed(3, 55.0)   # probe 4 done
+    check("probe 4 done, probe 1 not: cook not done",
+          s0.extra_state_attributes["phase"] != "done")
+    m.predictors[0].add_reading(now, 55.0, 110.0)
+    check("both at target: done", s0.extra_state_attributes["phase"] == "done")
+
+    m.start_cook(target_temp=54.0, probe_mode=const.PROBE_MODE_INDIVIDUAL, probe_index=0)
+    m.start_cook(target_temp=54.0, probe_mode=const.PROBE_MODE_INDIVIDUAL, probe_index=3)
+    feed(0, 55.0)
+    feed(3, 30.0)
+    attrs = s0.extra_state_attributes
+    check("individual mode: probe 1's phase is its own",
+          attrs["phase"] == "done" and attrs["probe_4_phase"] != "done", attrs["phase"])
+
+
 def main() -> None:
     test_slot_discovery()
     test_start_cook_individual()
@@ -498,6 +539,7 @@ def main() -> None:
     test_sensor_platform()
     test_restore()
     test_display_unit()
+    test_combined_phase()
     print(f"\nAll {PASSED} checks passed")
 
 

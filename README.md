@@ -660,7 +660,7 @@ Fits the curve `T(t) = T_ambient − (T_ambient − T₀) × e^(−kt)` to recen
 
 ### Combined ETA
 
-In combined mode the displayed ETA is `max(time_remaining)` across all active non-stale probes. This is correct because the cook is only *done* when **all** probes reach their target — so the slowest probe drives the timer.
+In combined mode the displayed ETA is `max(time_remaining)` across all active non-stale probes. This is correct because the cook is only *done* when **all** probes reach their target — so the slowest probe drives the timer. The primary sensor's `phase` follows the same probe: it reads `done` only when every active probe is done (an unfinished probe that has been silent for 5 minutes no longer counts). A spare probe that is not in the food will keep a combined cook open; use Individual mode, or leave it unplugged when you start.
 
 ### ML model file
 

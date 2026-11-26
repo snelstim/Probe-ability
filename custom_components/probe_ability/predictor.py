@@ -27,6 +27,46 @@ class PredictionResult:
     prediction_model: str = ""  # "ml" | "physics" | "" during collecting
 
 
+# ── Combined mode ────────────────────────────────────────────────────────────
+# A probe silent this long no longer holds a combined cook open.
+COMBINED_STALE_S = 300
+
+
+def combined_driver(
+    results: dict[int, PredictionResult],
+    temps: dict[int, float | None],
+    last_reading_ts: list[float],
+    now: float,
+) -> tuple[int, str]:
+    """(slot, phase) that speaks for a combined cook.
+
+    ``results`` / ``temps`` hold the active probes by slot.  The cook is "done"
+    only when every active probe is done; an unfinished probe that has stopped
+    reporting is ignored, so a dead probe cannot hold the cook open.  Until then
+    the unfinished probe with the most time left drives it (the coldest one
+    while none has an estimate).
+    """
+    def stale(i: int) -> bool:
+        ts = last_reading_ts[i] if i < len(last_reading_ts) else 0
+        return ts > 0 and now - ts > COMBINED_STALE_S
+
+    done = [i for i, r in results.items() if r.phase == "done"]
+    unfinished = [i for i, r in results.items() if r.phase != "done" and not stale(i)]
+    if not unfinished:
+        if done:
+            return done[0], "done"
+        unfinished = list(results)   # every probe is silent and none finished
+    with_eta = [i for i in unfinished if results[i].time_remaining_seconds is not None]
+    if with_eta:
+        driver = max(with_eta, key=lambda i: results[i].time_remaining_seconds)
+    else:
+        driver = min(
+            unfinished,
+            key=lambda i: temps[i] if temps.get(i) is not None else float("inf"),
+        )
+    return driver, results[driver].phase
+
+
 # ── Reading plausibility ─────────────────────────────────────────────────────
 # BLE / sensor glitches occasionally deliver impossible values (an internal
 # temperature of -1838 °C was seen in a real export).  Such readings are dropped

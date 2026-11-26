@@ -21,9 +21,11 @@ from dataclasses import dataclass
 
 try:  # package import inside Home Assistant
     from .const import DEFAULT_COOK_NAME, PROBE_MODE_INDIVIDUAL
+    from .predictor import combined_driver
     from .texts import Texts
 except ImportError:  # standalone (test_live_activity.py adds the package dir to sys.path)
     from const import DEFAULT_COOK_NAME, PROBE_MODE_INDIVIDUAL  # type: ignore[no-redef]
+    from predictor import combined_driver  # type: ignore[no-redef]
     from texts import Texts  # type: ignore[no-redef]
 
 TAG_PREFIX = "probe_ability"
@@ -467,30 +469,15 @@ class LiveActivityManager:
                 )
             return states
 
-        # Combined mode: one activity driven by the slowest probe.  "done"
-        # only when every active probe is done (unlike the probe-0 sensor,
-        # which reads unknown at that point).
+        # Combined mode: one activity driven by the slowest probe, "done" only
+        # when every active probe is (the same rule as the sensor's phase).
         results = {i: predictors[i].predict() for i in active}
-        not_done = [i for i in active if results[i].phase != "done"]
-        if not not_done:
-            driver = active[0]
-            phase = "done"
-        else:
-            with_eta = [
-                i for i in not_done if results[i].time_remaining_seconds is not None
-            ]
-            if with_eta:
-                driver = max(with_eta, key=lambda i: results[i].time_remaining_seconds)
-            else:
-                driver = min(
-                    not_done,
-                    key=lambda i: (
-                        predictors[i].current_temp
-                        if predictors[i].current_temp is not None
-                        else float("inf")
-                    ),
-                )
-            phase = results[driver].phase
+        driver, phase = combined_driver(
+            results,
+            {i: predictors[i].current_temp for i in active},
+            getattr(monitor, "_last_reading_ts", []),
+            now,
+        )
 
         pred = predictors[driver]
         result = results[driver]

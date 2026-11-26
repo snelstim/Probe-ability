@@ -17,6 +17,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import CONF_AMBIENT_SENSOR, DOMAIN, PROBE_MODE_COMBINED, display_unit
+from .predictor import COMBINED_STALE_S, combined_driver
 from .predictor import has_carryover as _has_carryover
 from .predictor import pull_temp as _pull_temp
 
@@ -105,6 +106,40 @@ def _remove_stale_probe_entities(
 # Pull temperature (carryover-adjusted) lives in predictor.py — HA-free, unit-tested.
 
 
+# The attributes _prediction_attrs may set.
+_PREDICTION_KEYS = (
+    "phase", "confidence", "prediction_model", "readings_count", "collect_progress",
+    "collect_waiting_rise", "rate_c_per_minute", "message", "pull_temp",
+    "pulled_at", "rest_peak",
+)
+
+
+def _prediction_attrs(predictor, result) -> dict:
+    """The attributes describing one probe's prediction."""
+    attrs = {
+        "phase": result.phase,
+        "confidence": result.confidence,
+        "prediction_model": result.prediction_model,
+        "readings_count": len(predictor.readings),
+    }
+    if result.phase == "collecting":
+        attrs["collect_progress"] = predictor.collect_progress
+        attrs["collect_waiting_rise"] = predictor.collecting_waiting_for_rise
+    if result.rate_per_minute is not None:
+        attrs["rate_c_per_minute"] = round(result.rate_per_minute, 3)
+    if result.message:
+        attrs["message"] = result.message
+    # Pull-from-heat temperature (carryover-adjusted)
+    pull = (_pull_temp(predictor.target_temp, result.rate_per_minute)
+            if _has_carryover(predictor.cook_name) else None)
+    if pull is not None:
+        attrs["pull_temp"] = pull
+    if predictor.rest_peak_c is not None:
+        attrs["pulled_at"] = predictor.pulled_at_c
+        attrs["rest_peak"] = predictor.rest_peak_c
+    return attrs
+
+
 class CookPredictorSensorBase(SensorEntity):
     """Base class for cook predictor sensors."""
 
@@ -179,7 +214,6 @@ class CookTimeRemainingSensor(CookPredictorSensorBase):
         """
         import time as _time
         now = _time.time()
-        _STALE_THRESHOLD = 300  # seconds — 5 minutes
 
         values: list[float] = []
         for i, (active, predictor) in enumerate(
@@ -188,7 +222,7 @@ class CookTimeRemainingSensor(CookPredictorSensorBase):
             if not active:
                 continue
             last_ts = self._monitor._last_reading_ts[i]
-            if last_ts > 0 and (now - last_ts) > _STALE_THRESHOLD:
+            if last_ts > 0 and (now - last_ts) > COMBINED_STALE_S:
                 continue
             result = predictor.predict()
             if result.phase in ("collecting", "done"):
@@ -250,6 +284,9 @@ class CookTimeRemainingSensor(CookPredictorSensorBase):
         if idx >= len(predictors):
             return attrs
 
+        combined = (idx == 0 and self._monitor.active
+                    and self._monitor.probe_mode == PROBE_MODE_COMBINED)
+
         # Non-primary probes: return early when their own probe is inactive
         if idx > 0 and not self._monitor.probe_active[idx]:
             return attrs
@@ -263,35 +300,12 @@ class CookTimeRemainingSensor(CookPredictorSensorBase):
             predictor = predictors[idx]
             result = predictor.predict()
 
-            attrs.update(
-                {
-                    "phase": result.phase,
-                    "confidence": result.confidence,
-                    "prediction_model": result.prediction_model,
-                    "target_temp": predictor.target_temp,
-                    "readings_count": len(predictor.readings),
-                }
-            )
-            if result.phase == "collecting":
-                attrs["collect_progress"] = predictor.collect_progress
-                attrs["collect_waiting_rise"] = predictor.collecting_waiting_for_rise
-            if result.rate_per_minute is not None:
-                attrs["rate_c_per_minute"] = round(result.rate_per_minute, 3)
-            if result.message:
-                attrs["message"] = result.message
+            attrs.update(_prediction_attrs(predictor, result))
+            attrs["target_temp"] = predictor.target_temp
             if predictor.current_temp is not None:
                 attrs["current_temp"] = round(predictor.current_temp, 1)
             if predictor.current_ambient is not None:
                 attrs["ambient_temp"] = round(predictor.current_ambient, 1)
-
-            # Pull-from-heat temperature
-            pull = (_pull_temp(predictor.target_temp, result.rate_per_minute)
-                    if _has_carryover(predictor.cook_name) else None)
-            if pull is not None:
-                attrs["pull_temp"] = pull
-            if predictor.rest_peak_c is not None:
-                attrs["pulled_at"] = predictor.pulled_at_c
-                attrs["rest_peak"] = predictor.rest_peak_c
 
         # For the primary sensor (probe 0), always include cross-probe data so
         # the card can render all probe slots regardless of probe 0's own state.
@@ -333,7 +347,33 @@ class CookTimeRemainingSensor(CookPredictorSensorBase):
                         attrs[f"probe_{n}_pulled_at"] = extra_pred.pulled_at_c
                         attrs[f"probe_{n}_rest_peak"] = extra_pred.rest_peak_c
 
+        # Combined mode: the primary sensor speaks for the whole cook, so its
+        # phase (and what goes with it) comes from the probe that sets it —
+        # "done" only once every active probe is done.  current_temp and
+        # target_temp stay probe 1's.
+        if combined:
+            self._apply_combined_prediction(attrs)
+
         return attrs
+
+    def _apply_combined_prediction(self, attrs: dict) -> None:
+        import time as _time
+
+        monitor = self._monitor
+        active = [i for i, is_active in enumerate(monitor.probe_active) if is_active]
+        if not active:
+            return
+        results = {i: monitor.predictors[i].predict() for i in active}
+        driver, _phase = combined_driver(
+            results,
+            {i: monitor.predictors[i].current_temp for i in active},
+            monitor._last_reading_ts,
+            _time.time(),
+        )
+        for key in _PREDICTION_KEYS:
+            attrs.pop(key, None)
+        attrs.update(_prediction_attrs(monitor.predictors[driver], results[driver]))
+        attrs.setdefault("target_temp", monitor.predictors[driver].target_temp)
 
 
 class CookETASensor(CookPredictorSensorBase):
